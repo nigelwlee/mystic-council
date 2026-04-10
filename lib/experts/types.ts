@@ -39,4 +39,9 @@ export interface CouncilStreamData {
   responses: ExpertResponse[];
 }
 
+export interface JudgeVerdictData {
+  type: "judge-verdict";
+  content: string;
+}
+
 export type SelectedExperts = Set<string>;

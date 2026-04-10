@@ -8,7 +8,7 @@ import { JudgeVerdict } from "@/components/chat/JudgeVerdict";
 import { TypingIndicator } from "@/components/chat/TypingIndicator";
 import { ExpertSelector } from "@/components/chat/ExpertSelector";
 import { QuickPrompts } from "@/components/chat/QuickPrompts";
-import type { CouncilStreamData, ExpertResponse } from "@/lib/experts/types";
+import type { CouncilStreamData, JudgeVerdictData, ExpertResponse } from "@/lib/experts/types";
 import type { JSONValue } from "ai";
 import Link from "next/link";
 
@@ -25,30 +25,35 @@ export default function ChatPage() {
 
   // Extract expert responses from data stream
   const [expertResponses, setExpertResponses] = useState<ExpertResponse[]>([]);
+  const [mockJudgeVerdict, setMockJudgeVerdict] = useState<string | null>(null);
 
   useEffect(() => {
     if (!data) return;
     for (const item of data as JSONValue[]) {
-      const d = item as unknown as CouncilStreamData;
-      if (d && typeof d === "object" && "type" in d && d.type === "expert-responses") {
-        // Merge incoming responses — server now streams one expert at a time
+      const d = item as unknown as CouncilStreamData | JudgeVerdictData;
+      if (!d || typeof d !== "object" || !("type" in d)) continue;
+      if (d.type === "expert-responses") {
+        // Merge incoming responses — server streams one expert at a time
         setExpertResponses((prev) => {
           const updated = [...prev];
-          for (const incoming of d.responses) {
+          for (const incoming of (d as CouncilStreamData).responses) {
             const idx = updated.findIndex((r) => r.expertId === incoming.expertId);
             if (idx >= 0) updated[idx] = incoming;
             else updated.push(incoming);
           }
           return updated;
         });
+      } else if (d.type === "judge-verdict") {
+        setMockJudgeVerdict((d as JudgeVerdictData).content);
       }
     }
   }, [data]);
 
-  // Clear expert responses when a new request starts
+  // Clear state when a new request starts
   useEffect(() => {
     if (isLoading) {
       setExpertResponses([]);
+      setMockJudgeVerdict(null);
     }
   }, [isLoading]);
 
@@ -69,6 +74,8 @@ export default function ChatPage() {
 
   const lastAssistantMessage = messages.filter((m) => m.role === "assistant").at(-1);
   const isWaitingForExperts = isLoading && expertResponses.length === 0;
+  // Mock mode: show verdict from data stream when no real assistant message arrived
+  const showMockVerdict = !isLoading && mockJudgeVerdict && !lastAssistantMessage;
 
   return (
     <div className="flex flex-col h-[100dvh] bg-neutral-950">
@@ -132,21 +139,27 @@ export default function ChatPage() {
           );
         })}
 
+        {/* Mock mode: show expert cards + verdict from data stream */}
+        {showMockVerdict && (
+          <div className="space-y-4">
+            {expertResponses.map((r) => (
+              <ExpertResponseCard key={r.expertId} response={r} />
+            ))}
+            <JudgeVerdict content={mockJudgeVerdict!} isStreaming={false} />
+          </div>
+        )}
+
         {/* Loading: waiting for experts */}
         {isWaitingForExperts && (
           <TypingIndicator selectedExpertIds={selectedExperts} />
         )}
 
-        {/* Loading: experts done, judge streaming */}
-        {isLoading && expertResponses.length > 0 && (
+        {/* Loading: experts arriving, judge not yet streaming */}
+        {isLoading && expertResponses.length > 0 && messages.filter((m) => m.role === "assistant").length === 0 && (
           <div className="space-y-4">
-            {messages.filter((m) => m.role === "assistant").length === 0 && (
-              <div className="space-y-4">
-                {expertResponses.map((r) => (
-                  <ExpertResponseCard key={r.expertId} response={r} />
-                ))}
-              </div>
-            )}
+            {expertResponses.map((r) => (
+              <ExpertResponseCard key={r.expertId} response={r} />
+            ))}
           </div>
         )}
 
