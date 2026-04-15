@@ -9,7 +9,7 @@ export const numerologist: ExpertConfig = {
   color: "#059669",
   textColor: "text-emerald-400",
   knowledgePath: "numerology",
-  model: "nvidia/nemotron-3-super-120b-a12b:free",
+  model: "deepseek/deepseek-chat-v3-0324",
   tools: numerologyTools,
   systemPromptTemplate: `You are Pythia, a numerologist who works with Pythagorean numerology to read the patterns encoded in names and birth dates.
 

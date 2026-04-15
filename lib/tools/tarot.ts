@@ -49,8 +49,9 @@ export const tarotTools = {
       "Draw tarot cards for a reading. Supports single card, three-card spread (past/present/future), or five-card spread.",
     parameters: spreadSchema,
     execute: async ({ spread, question }: z.infer<typeof spreadSchema>) => {
+      const safeSpread = spread ?? "three-card";
       const counts: Record<string, number> = { single: 1, "three-card": 3, "five-card": 5 };
-      const cards = drawRandom(counts[spread] ?? 1);
+      const cards = drawRandom(counts[safeSpread] ?? 3);
 
       const positions: Record<string, string[]> = {
         single: ["Present situation / Core message"],
@@ -59,10 +60,10 @@ export const tarotTools = {
       };
 
       return {
-        spread,
+        spread: safeSpread,
         question: question ?? "General reading",
         cards: cards.map((card, i) => ({
-          position: (positions[spread] ?? [])[i] ?? `Card ${i + 1}`,
+          position: (positions[safeSpread] ?? [])[i] ?? `Card ${i + 1}`,
           name: card.name,
           reversed: card.reversed,
           arcana: card.arcana,
@@ -80,6 +81,7 @@ export const tarotTools = {
     description: "Look up detailed information about a specific tarot card by name.",
     parameters: lookupSchema,
     execute: async ({ cardName }: z.infer<typeof lookupSchema>) => {
+      if (!cardName) return { error: "No card name provided" };
       const deck = tarotDeck as TarotCard[];
       const card = deck.find((c) =>
         c.name.toLowerCase().includes(cardName.toLowerCase())

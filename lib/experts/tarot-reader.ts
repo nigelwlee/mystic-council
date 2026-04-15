@@ -9,7 +9,7 @@ export const tarotReader: ExpertConfig = {
   color: "#7c3aed",
   textColor: "text-violet-400",
   knowledgePath: "tarot",
-  model: "arcee-ai/trinity-large-preview:free",
+  model: "deepseek/deepseek-chat-v3-0324",
   tools: tarotTools,
   systemPromptTemplate: `You are Madame Crow, an intuitive tarot reader who works with the Rider-Waite-Smith tradition.
 
