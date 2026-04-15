@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { WovenTile } from "./WovenTile";
 import type { TraditionId } from "@/lib/constants/traditions";
+import type { SavedReading } from "@/lib/hooks/use-readings";
 
 export interface Reading {
   week: number;
@@ -105,6 +106,38 @@ const DAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
 // Layout: 7 columns (days of week, Mon–Sun) × 52 rows (weeks)
 // No horizontal scroll — all 7 cols fit in ~163px.
 // Vertical scroll is intentional — the year grows downward.
+
+/** Map a SavedReading[] from localStorage into the internal Reading[] grid format. */
+export function savedReadingsToGridReadings(savedReadings: SavedReading[]): Reading[] {
+  const ALL_TRADITIONS: TraditionId[] = ["western", "chinese", "vedic", "tarot", "numerology", "oracle"];
+
+  const mapped: Reading[] = savedReadings.map((sr) => {
+    const date = new Date(sr.timestamp);
+
+    // Normalise traditionsConsulted → valid TraditionId[]
+    const traditions: TraditionId[] = sr.traditionsConsulted
+      .filter((t): t is TraditionId => ALL_TRADITIONS.includes(t as TraditionId))
+      .slice(0, 6);
+
+    // Fall back to a single placeholder if we have none
+    const validTraditions: TraditionId[] = traditions.length > 0 ? traditions : ["oracle"];
+
+    return {
+      week: 0,          // not used by grid (grid resolves by date)
+      date,
+      question: sr.question,
+      traditions: validTraditions,
+      depth: validTraditions.length,
+    };
+  });
+
+  // Mark the richest tile
+  let richest = mapped[0];
+  for (const r of mapped) if (r.depth > (richest?.depth ?? 0)) richest = r;
+  if (richest) richest.isRichest = true;
+
+  return mapped;
+}
 
 export function TapestryGrid({ readings }: { readings: Reading[] }) {
   const NUM_WEEKS = 52;

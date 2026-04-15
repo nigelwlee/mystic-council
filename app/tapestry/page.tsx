@@ -2,23 +2,15 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { TapestryGrid, generateReadings } from "@/components/loom/TapestryGrid";
-import { WovenTile } from "@/components/loom/WovenTile";
+import { TapestryGrid, savedReadingsToGridReadings } from "@/components/loom/TapestryGrid";
 import { ShareableCard } from "@/components/shared/ShareableCard";
 import { TRADITION_MAP, TRADITIONS } from "@/lib/constants/traditions";
 import type { TraditionId } from "@/lib/constants/traditions";
 import { useBirthData } from "@/lib/context/birth-data-context";
+import { useReadings } from "@/lib/hooks/use-readings";
 
 const BG = "#0A0B14";
 const FG = "#F5F0E8";
-
-const THREADS: { id: TraditionId; label: string; lastWoven: string; active: boolean }[] = [
-  { id: "western",    label: "Western Astrology", lastWoven: "4 days ago",  active: true  },
-  { id: "vedic",      label: "Vedic Jyotish",     lastWoven: "12 days ago", active: true  },
-  { id: "tarot",      label: "Tarot",             lastWoven: "1 day ago",   active: true  },
-  { id: "numerology", label: "Numerology",        lastWoven: "3 weeks ago", active: true  },
-  { id: "chinese",    label: "Chinese Astrology", lastWoven: "–",           active: false },
-];
 
 const rule: React.CSSProperties = {
   borderTop: "1px solid rgba(245,240,232,0.08)",
@@ -34,22 +26,271 @@ const sectionLabel: React.CSSProperties = {
   marginBottom: 16,
 };
 
+// ── Stat helpers ──────────────────────────────────────────────────────────────
+
+/**
+ * Returns the number of consecutive weeks (ending on the most recent reading's
+ * week) that contain at least one reading.
+ */
+function computeStreak(timestamps: string[]): number {
+  if (timestamps.length === 0) return 0;
+
+  // Get the ISO week number (Mon-based) for a date
+  function isoWeekKey(d: Date): string {
+    const tmp = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+    // Thursday in current week → determines ISO year
+    tmp.setUTCDate(tmp.getUTCDate() + 4 - (tmp.getUTCDay() || 7));
+    const yearStart = new Date(Date.UTC(tmp.getUTCFullYear(), 0, 1));
+    const week = Math.ceil(
+      ((tmp.getTime() - yearStart.getTime()) / 86400000 + 1) / 7
+    );
+    return `${tmp.getUTCFullYear()}-W${week}`;
+  }
+
+  // Collect unique week keys
+  const weekSet = new Set<string>(
+    timestamps.map((ts) => isoWeekKey(new Date(ts)))
+  );
+  const sortedWeeks = Array.from(weekSet).sort();
+
+  // Walk backwards from the most recent week
+  const latestWeek = sortedWeeks[sortedWeeks.length - 1];
+
+  function prevWeekKey(key: string): string {
+    const [yearStr, wStr] = key.split("-W");
+    let year = parseInt(yearStr, 10);
+    let week = parseInt(wStr, 10) - 1;
+    if (week === 0) {
+      year -= 1;
+      // ISO weeks in the previous year
+      const dec28 = new Date(Date.UTC(year, 11, 28));
+      const dec28Dow = dec28.getUTCDay() || 7;
+      dec28.setUTCDate(dec28.getUTCDate() + 4 - dec28Dow);
+      const yearStart = new Date(Date.UTC(dec28.getUTCFullYear(), 0, 1));
+      week = Math.ceil(
+        ((dec28.getTime() - yearStart.getTime()) / 86400000 + 1) / 7
+      );
+    }
+    return `${year}-W${week}`;
+  }
+
+  let streak = 1;
+  let current = latestWeek;
+  while (true) {
+    const prev = prevWeekKey(current);
+    if (weekSet.has(prev)) {
+      streak++;
+      current = prev;
+    } else {
+      break;
+    }
+  }
+  return streak;
+}
+
+/**
+ * Count distinct tradition IDs across all readings, capped at 5.
+ */
+function countThreads(allTraditions: string[][]): number {
+  const ids = new Set<string>();
+  for (const arr of allTraditions) for (const t of arr) ids.add(t);
+  return Math.min(ids.size, 5);
+}
+
+/**
+ * Return the tradition name that appears most frequently.
+ */
+function mostConsulted(allTraditions: string[][]): string {
+  const freq: Record<string, number> = {};
+  for (const arr of allTraditions) {
+    for (const t of arr) {
+      freq[t] = (freq[t] ?? 0) + 1;
+    }
+  }
+  let best = "";
+  let bestCount = 0;
+  for (const [t, count] of Object.entries(freq)) {
+    if (count > bestCount) {
+      bestCount = count;
+      best = t;
+    }
+  }
+  if (!best) return "—";
+  // Return short label from TRADITION_MAP if available
+  const tid = best as TraditionId;
+  return TRADITION_MAP[tid]?.shortLabel ?? best;
+}
+
 export default function TapestryPage() {
   const { birthData } = useBirthData();
-  const readings = useMemo(() => generateReadings(), []);
+  const { readings: savedReadings } = useReadings();
+
   const [shareHovered, setShareHovered] = useState(false);
   const [connectHovered, setConnectHovered] = useState(false);
   const [viewAllHovered, setViewAllHovered] = useState(false);
   const [cardShareHovered, setCardShareHovered] = useState(false);
 
-  const recentReadings = useMemo(
-    () => [...readings].sort((a, b) => b.date.getTime() - a.date.getTime()).slice(0, 3),
-    [readings]
+  // Map saved readings → internal grid format
+  const gridReadings = useMemo(
+    () => savedReadingsToGridReadings(savedReadings),
+    [savedReadings]
   );
 
-  const name = birthData?.name ?? "Nigel Lee";
-  const readingCount = readings.length;
+  // Compute real stats
+  const readingCount = savedReadings.length;
 
+  const streakWeeks = useMemo(
+    () => computeStreak(savedReadings.map((r) => r.timestamp)),
+    [savedReadings]
+  );
+
+  const threadsConnected = useMemo(
+    () => countThreads(savedReadings.map((r) => r.traditionsConsulted)),
+    [savedReadings]
+  );
+
+  const mostConsultedLabel = useMemo(
+    () => mostConsulted(savedReadings.map((r) => r.traditionsConsulted)),
+    [savedReadings]
+  );
+
+  // 3 most recent readings (savedReadings is already newest-first)
+  const recentReadings = useMemo(
+    () =>
+      savedReadings.slice(0, 3).map((sr) => ({
+        date: new Date(sr.timestamp),
+        question: sr.question,
+        traditions: sr.traditionsConsulted.filter(
+          (t): t is TraditionId =>
+            (["western", "chinese", "vedic", "tarot", "numerology", "oracle"] as string[]).includes(t)
+        ),
+      })),
+    [savedReadings]
+  );
+
+  // Build thread inventory from real data
+  const usedTraditionIds = useMemo(() => {
+    const ids = new Set<TraditionId>();
+    for (const r of savedReadings) {
+      for (const t of r.traditionsConsulted) {
+        const validIds: TraditionId[] = ["western", "chinese", "vedic", "tarot", "numerology", "oracle"];
+        if (validIds.includes(t as TraditionId)) ids.add(t as TraditionId);
+      }
+    }
+    return ids;
+  }, [savedReadings]);
+
+  // Latest reading date per tradition
+  const latestByTradition = useMemo(() => {
+    const latest: Partial<Record<TraditionId, Date>> = {};
+    // savedReadings newest-first, so first occurrence = most recent
+    for (const r of [...savedReadings].reverse()) {
+      for (const t of r.traditionsConsulted) {
+        const tid = t as TraditionId;
+        const d = new Date(r.timestamp);
+        if (!latest[tid] || d > latest[tid]!) latest[tid] = d;
+      }
+    }
+    return latest;
+  }, [savedReadings]);
+
+  function formatLastWoven(date: Date | undefined): string {
+    if (!date) return "—";
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffDays = Math.floor(diffMs / 86400000);
+    if (diffDays === 0) return "today";
+    if (diffDays === 1) return "1 day ago";
+    if (diffDays < 7) return `${diffDays} days ago`;
+    const diffWeeks = Math.floor(diffDays / 7);
+    if (diffWeeks === 1) return "1 week ago";
+    return `${diffWeeks} weeks ago`;
+  }
+
+  const name = birthData?.name ?? "Seeker";
+
+  // ── Empty state ───────────────────────────────────────────────────────────
+  if (readingCount === 0) {
+    return (
+      <div
+        style={{
+          background: BG,
+          color: FG,
+          minHeight: "100vh",
+          fontFamily: "var(--font-geist-sans)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <div style={{ textAlign: "center", maxWidth: 400, padding: "0 24px" }}>
+          {/* Back link */}
+          <div style={{ marginBottom: 48, textAlign: "left" }}>
+            <Link
+              href="/chat"
+              style={{
+                fontFamily: "var(--font-geist-sans)",
+                fontSize: 12,
+                color: "rgba(245,240,232,0.40)",
+                textDecoration: "none",
+                letterSpacing: "0.04em",
+              }}
+            >
+              ← Council
+            </Link>
+          </div>
+
+          <div
+            style={{
+              fontFamily: "var(--font-cormorant)",
+              fontSize: 38,
+              fontWeight: 700,
+              color: FG,
+              letterSpacing: "0.01em",
+              lineHeight: 1.1,
+              marginBottom: 16,
+            }}
+          >
+            Your tapestry has not yet begun.
+          </div>
+
+          <div
+            style={{
+              fontFamily: "var(--font-geist-sans)",
+              fontSize: 13,
+              color: "rgba(245,240,232,0.45)",
+              letterSpacing: "0.02em",
+              lineHeight: 1.6,
+              marginBottom: 40,
+            }}
+          >
+            Complete your first reading to weave your first thread.
+          </div>
+
+          <Link
+            href="/chat"
+            style={{
+              display: "inline-block",
+              fontFamily: "var(--font-geist-sans)",
+              fontSize: 11,
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
+              color: "rgba(245,240,232,0.55)",
+              border: "1px solid rgba(245,240,232,0.18)",
+              borderRadius: 0,
+              padding: "10px 28px",
+              textDecoration: "none",
+              transition: "color 0.15s, border-color 0.15s",
+            }}
+          >
+            Begin a reading
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Full tapestry page ────────────────────────────────────────────────────
   return (
     <div style={{ background: BG, color: FG, minHeight: "100vh", fontFamily: "var(--font-geist-sans)" }}>
       <div
@@ -134,7 +375,7 @@ export default function TapestryPage() {
                 letterSpacing: "0.02em",
               }}
             >
-              Member since March 2, 2025 · {readingCount} readings woven
+              {readingCount} reading{readingCount !== 1 ? "s" : ""} woven
             </div>
           </div>
 
@@ -142,7 +383,7 @@ export default function TapestryPage() {
 
           {/* ── B. Tapestry Grid ──────────────────────────────── */}
           <div style={{ marginBottom: 48 }}>
-            <TapestryGrid readings={readings} />
+            <TapestryGrid readings={gridReadings} />
           </div>
 
           <div style={rule} />
@@ -151,10 +392,10 @@ export default function TapestryPage() {
           <div style={{ marginBottom: 40 }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 0 }}>
               {[
-                { number: String(readingCount), sub: "Readings woven" },
-                { number: "12",        sub: "Week streak" },
-                { number: "4 / 5",    sub: "Threads connected" },
-                { number: "Western",  sub: "Most consulted", isText: true },
+                { number: String(readingCount),                    sub: "Readings woven"   },
+                { number: String(streakWeeks),                     sub: "Week streak"       },
+                { number: `${threadsConnected} / 5`,               sub: "Threads connected" },
+                { number: mostConsultedLabel, sub: "Most consulted", isText: true },
               ].map((stat, i) => (
                 <div
                   key={i}
@@ -199,18 +440,20 @@ export default function TapestryPage() {
             <div style={sectionLabel}>Your Threads</div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-              {THREADS.map((thread, i) => {
-                const trad = TRADITION_MAP[thread.id];
+              {TRADITIONS.filter((t) => t.id !== "oracle").map((trad, i) => {
+                const active = usedTraditionIds.has(trad.id);
+                const lastDate = latestByTradition[trad.id];
+                const arr = TRADITIONS.filter((t) => t.id !== "oracle");
                 return (
                   <div
-                    key={thread.id}
+                    key={trad.id}
                     style={{
                       display: "flex",
                       alignItems: "center",
                       gap: 16,
                       padding: "13px 0",
-                      borderBottom: i < THREADS.length - 1 ? "1px solid rgba(245,240,232,0.05)" : "none",
-                      opacity: thread.active ? 1 : 0.38,
+                      borderBottom: i < arr.length - 1 ? "1px solid rgba(245,240,232,0.05)" : "none",
+                      opacity: active ? 1 : 0.38,
                     }}
                   >
                     <div
@@ -219,7 +462,7 @@ export default function TapestryPage() {
                         height: 22,
                         background: trad.hex,
                         flexShrink: 0,
-                        opacity: thread.active ? 0.9 : 0.35,
+                        opacity: active ? 0.9 : 0.35,
                       }}
                     />
                     <div style={{ flex: 1 }}>
@@ -227,11 +470,11 @@ export default function TapestryPage() {
                         style={{
                           fontFamily: "var(--font-geist-sans)",
                           fontSize: 13,
-                          color: thread.active ? "rgba(245,240,232,0.82)" : "rgba(245,240,232,0.38)",
+                          color: active ? "rgba(245,240,232,0.82)" : "rgba(245,240,232,0.38)",
                           letterSpacing: "0.01em",
                         }}
                       >
-                        {thread.label}
+                        {trad.label}
                       </div>
                     </div>
                     <div
@@ -242,7 +485,7 @@ export default function TapestryPage() {
                         letterSpacing: "0.04em",
                       }}
                     >
-                      {thread.active ? `Last woven ${thread.lastWoven}` : "Not connected"}
+                      {active ? `Last woven ${formatLastWoven(lastDate)}` : "Not connected"}
                     </div>
                   </div>
                 );
@@ -349,7 +592,7 @@ export default function TapestryPage() {
                 transition: "color 0.15s",
               }}
             >
-              View all {readingCount} readings →
+              View all {readingCount} reading{readingCount !== 1 ? "s" : ""} →
             </button>
           </div>
 
@@ -361,10 +604,10 @@ export default function TapestryPage() {
 
             <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 20 }}>
               <ShareableCard
-                readings={readings}
+                readings={gridReadings}
                 name={name}
                 readingCount={readingCount}
-                streakWeeks={12}
+                streakWeeks={streakWeeks}
               />
 
               <button
