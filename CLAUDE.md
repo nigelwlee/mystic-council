@@ -7,7 +7,7 @@ AI-powered mystical advisory council combining Western astrology, Vedic astrolog
 ## Repository
 
 - **GitHub**: https://github.com/nigelwlee/mystic-council
-- **Vercel**: [add production URL after Vercel setup]
+- **Vercel**: https://mystic-council.vercel.app
 - **Linear**: https://linear.app/nigel-hobby/project/mystic-council-7d5f8d11f7b3/issues
   - Team: Nigel Hobby (key: `NIG`)
   - Project ID: `ebeb5e1c-2de9-4611-9839-e2b5455193be`
