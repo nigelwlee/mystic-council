@@ -48,7 +48,8 @@ function serializeState(props: RunSummaryBarProps): string {
   lines.push("### Experts");
   for (const [, s] of props.expertStates) {
     const dur = s.durationMs != null ? `${(s.durationMs / 1000).toFixed(1)}s` : "—";
-    const contentLen = s.content ? `${s.content.length} chars` : "empty";
+    const contentStr = typeof s.content === "string" ? s.content : JSON.stringify(s.content);
+    const contentLen = contentStr ? `${contentStr.length} chars` : "empty";
     const tok = s.usage ? `${s.usage.promptTokens}in/${s.usage.completionTokens}out` : "—";
     lines.push(`- ${s.expertEmoji} ${s.expertName}: ${s.status} | ${s.model} | ${dur} | ${contentLen} | ${tok}`);
     if (s.error) lines.push(`  ERROR: ${s.error}`);
@@ -63,7 +64,10 @@ function serializeState(props: RunSummaryBarProps): string {
   const js = props.judgeState;
   const judgeTok = js.usage ? `${js.usage.promptTokens}in/${js.usage.completionTokens}out` : "—";
   const judgeDur = js.durationMs != null ? `${(js.durationMs / 1000).toFixed(1)}s` : "—";
-  lines.push(`- Status: ${js.status} | Model: ${js.model || "—"} | ${judgeDur} | Content: ${js.content ? `${js.content.length} chars` : "empty"} | ${judgeTok}`);
+  const judgeContentStr = js.content
+    ? (typeof js.content === "string" ? js.content : JSON.stringify(js.content))
+    : "";
+  lines.push(`- Status: ${js.status} | Model: ${js.model || "—"} | ${judgeDur} | Content: ${judgeContentStr ? `${judgeContentStr.length} chars` : "empty"} | ${judgeTok}`);
   if (js.usage) {
     totalPromptTokens += js.usage.promptTokens;
     totalCompletionTokens += js.usage.completionTokens;

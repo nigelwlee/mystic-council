@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { StatusBadge, type Status } from "./StatusBadge";
-import type { ToolCallRecord, TokenUsage } from "@/lib/experts/types";
+import type { StructuredExpertContent, ToolCallRecord, TokenUsage } from "@/lib/experts/types";
 
 export interface ExpertPanelState {
   expertId: string;
@@ -13,7 +13,7 @@ export interface ExpertPanelState {
   model: string;
   status: Status;
   resolvedSystemPrompt: string;
-  content: string;
+  content: StructuredExpertContent | string;
   toolCalls: ToolCallRecord[];
   usage?: TokenUsage;
   error?: string;
@@ -91,7 +91,9 @@ export function ExpertPanel({ state }: { state: ExpertPanelState }) {
             <div className="text-xs font-mono text-red-400">{state.error}</div>
           ) : state.content ? (
             <div className="text-xs font-mono text-neutral-400 whitespace-pre-wrap leading-relaxed">
-              {state.content}
+              {typeof state.content === "string"
+                ? state.content
+                : JSON.stringify(state.content, null, 2)}
             </div>
           ) : state.status === "running" ? (
             <div className="text-xs font-mono text-neutral-700 animate-pulse">generating...</div>

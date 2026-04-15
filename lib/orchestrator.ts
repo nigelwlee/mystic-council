@@ -1,10 +1,10 @@
-import { generateText, streamText, convertToCoreMessages } from "ai";
+import { generateText, convertToCoreMessages } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { z } from "zod";
 import { experts } from "./experts/registry";
 import { judgeConfig } from "./experts/judge";
 import { loadKnowledge } from "./knowledge/loader";
-import type { BirthData, ExpertResponse, ToolCallRecord, TokenUsage } from "./experts/types";
+import type { BirthData, ExpertResponse, StructuredExpertContent, ToolCallRecord, TokenUsage } from "./experts/types";
 import type { CoreTool, DataStreamWriter, Message } from "ai";
 
 const openrouter = createOpenAI({
@@ -88,6 +88,72 @@ function patchToolsWithBirthData(
   return patched;
 }
 
+function parseStructuredExpert(text: string): StructuredExpertContent {
+  // Try direct JSON parse
+  try {
+    const parsed = JSON.parse(text) as Record<string, unknown>;
+    if (parsed.facts && parsed.analysis && parsed.summary && parsed.oneLiner) {
+      return {
+        facts: String(parsed.facts),
+        analysis: String(parsed.analysis),
+        summary: String(parsed.summary),
+        oneLiner: String(parsed.oneLiner),
+      };
+    }
+  } catch {
+    // fall through
+  }
+
+  // Try extracting from markdown code fences
+  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenceMatch) {
+    try {
+      const parsed = JSON.parse(fenceMatch[1]) as Record<string, unknown>;
+      if (parsed.facts && parsed.analysis && parsed.summary && parsed.oneLiner) {
+        return {
+          facts: String(parsed.facts),
+          analysis: String(parsed.analysis),
+          summary: String(parsed.summary),
+          oneLiner: String(parsed.oneLiner),
+        };
+      }
+    } catch {
+      // fall through
+    }
+  }
+
+  // Fallback
+  return { facts: "", analysis: "", summary: text, oneLiner: text };
+}
+
+function parseJudgeOutput(text: string): { summary: string; oneLiner: string } {
+  // Try direct JSON parse
+  try {
+    const parsed = JSON.parse(text) as Record<string, unknown>;
+    if (parsed.summary && parsed.oneLiner) {
+      return { summary: String(parsed.summary), oneLiner: String(parsed.oneLiner) };
+    }
+  } catch {
+    // fall through
+  }
+
+  // Try extracting from markdown code fences
+  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenceMatch) {
+    try {
+      const parsed = JSON.parse(fenceMatch[1]) as Record<string, unknown>;
+      if (parsed.summary && parsed.oneLiner) {
+        return { summary: String(parsed.summary), oneLiner: String(parsed.oneLiner) };
+      }
+    } catch {
+      // fall through
+    }
+  }
+
+  // Fallback
+  return { summary: text, oneLiner: text };
+}
+
 export async function runCouncil(
   messages: Message[],
   birthData: BirthData | null,
@@ -111,12 +177,13 @@ export async function runCouncil(
       const systemPrompt = expert.systemPromptTemplate
         .replace("{knowledge}", knowledge)
         .replace("{birthData}", birthDataStr)
-        + `\n\nOUTPUT RULES — FOLLOW EXACTLY:
-- Write exactly 4-5 bullet points. No more, no less.
-- Each bullet is 1-2 short sentences. No long paragraphs.
-- Use simple everyday words. A 13-year-old should understand every sentence.
-- Be specific (name actual planets/cards/numbers from your tool results). No vague filler.
-- Do not add a title, introduction, summary, or closing line. Just the bullets.`;
+        + `\n\nOUTPUT FORMAT — RESPOND WITH VALID JSON ONLY:
+{
+  "facts": "Raw observations from your tradition. Name specific positions, cards, numbers, pillars. Data only, no interpretation.",
+  "analysis": "What these facts mean for this specific person and question. 3-5 sentences of interpretation.",
+  "summary": "2-3 sentence reading capturing the essence.",
+  "oneLiner": "One sentence: the key insight and its implication for the user."
+}`;
 
       const effectiveModel = modelOverride ?? expert.model;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -144,6 +211,7 @@ export async function runCouncil(
         }
 
         const usage: TokenUsage = result.usage;
+        const structuredContent = parseStructuredExpert(result.text);
         const response: ExpertResponse = {
           expertId: expert.id,
           expertName: expert.name,
@@ -151,7 +219,7 @@ export async function runCouncil(
           expertTitle: expert.title,
           color: expert.color,
           textColor: expert.textColor,
-          content: result.text,
+          content: structuredContent,
         };
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         dataStream.writeData({ type: "expert-responses", responses: [response], ...tag } as any);
@@ -184,7 +252,10 @@ export async function runCouncil(
   if (successfulReadings.length === 0) return;
 
   const expertOutputs = successfulReadings
-    .map((r) => `### ${r.expertName} (${r.expertTitle})\n${r.content}`)
+    .map((r) => {
+      const content = typeof r.content === "string" ? r.content : r.content.analysis;
+      return `### ${r.expertName} (${r.expertTitle})\n${content}`;
+    })
     .join("\n\n---\n\n");
 
   const judgeSystemPrompt = judgeConfig.systemPromptTemplate.replace(
@@ -205,27 +276,15 @@ export async function runCouncil(
 
   const judgeStartTime = Date.now();
 
-  if (modelRunId) {
-    // Benchmark mode: use generateText so multiple judges don't fight over the text stream
-    const judgeResult = await generateWithRetry({
-      model: openrouter(effectiveJudgeModel),
-      system: judgeSystemPrompt,
-      messages: [{ role: "user", content: userContent }],
-    });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    dataStream.writeData({ type: "judge-verdict", content: judgeResult.text, ...tag } as any);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    dataStream.writeData({ type: "judge-complete", usage: judgeResult.usage, durationMs: Date.now() - judgeStartTime, ...tag } as any);
-  } else {
-    // Normal mode: stream judge text into the assistant message
-    const judgeResult = streamText({
-      model: openrouter(effectiveJudgeModel),
-      system: judgeSystemPrompt,
-      messages: [{ role: "user", content: userContent }],
-    });
-    judgeResult.mergeIntoDataStream(dataStream);
-    const judgeUsage: TokenUsage = await judgeResult.usage;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    dataStream.writeData({ type: "judge-complete", usage: judgeUsage, durationMs: Date.now() - judgeStartTime } as any);
-  }
+  // Always use generateText so oracle emits structured judge-verdict event
+  const judgeResult = await generateWithRetry({
+    model: openrouter(effectiveJudgeModel),
+    system: judgeSystemPrompt,
+    messages: [{ role: "user", content: userContent }],
+  });
+  const judgeVerdict = parseJudgeOutput(judgeResult.text);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  dataStream.writeData({ type: "judge-verdict", content: judgeVerdict, ...tag } as any);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  dataStream.writeData({ type: "judge-complete", usage: judgeResult.usage, durationMs: Date.now() - judgeStartTime, ...tag } as any);
 }

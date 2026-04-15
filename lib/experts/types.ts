@@ -1,5 +1,12 @@
 import type { CoreTool } from "ai";
 
+export interface StructuredExpertContent {
+  facts: string;
+  analysis: string;
+  summary: string;
+  oneLiner: string;
+}
+
 export interface BirthData {
   name?: string;
   date?: string; // ISO date string YYYY-MM-DD
@@ -30,7 +37,7 @@ export interface ExpertResponse {
   expertTitle: string;
   color: string;
   textColor: string;
-  content: string;
+  content: StructuredExpertContent | string;
   error?: string;
 }
 
@@ -41,7 +48,7 @@ export interface CouncilStreamData {
 
 export interface JudgeVerdictData {
   type: "judge-verdict";
-  content: string;
+  content: { summary: string; oneLiner: string };
 }
 
 export type SelectedExperts = Set<string>;
@@ -81,7 +88,7 @@ export interface ExpertCompleteEvent {
   color: string;
   textColor: string;
   model: string;
-  content: string;
+  content: StructuredExpertContent | string;
   resolvedSystemPrompt: string;
   toolCalls: ToolCallRecord[];
   usage?: TokenUsage;
@@ -99,7 +106,7 @@ export interface JudgeStartEvent {
 
 export interface JudgeVerdictEvent {
   type: "judge-verdict";
-  content: string;
+  content: { summary: string; oneLiner: string };
   modelRunId?: string;
 }
 

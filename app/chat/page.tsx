@@ -34,7 +34,7 @@ export default function ChatPage() {
 
   // Expert responses + oracle
   const [expertResponses, setExpertResponses] = useState<ExpertResponse[]>([]);
-  const [oracleContent, setOracleContent] = useState<string | null>(null);
+  const [oracleContent, setOracleContent] = useState<{ summary: string; oneLiner: string } | null>(null);
 
   // Readings persistence
   const { saveReading } = useReadings();
@@ -84,7 +84,8 @@ export default function ChatPage() {
       }
 
       if (d.type === "judge-verdict") {
-        setOracleContent((d as JudgeVerdictData).content);
+        const verdict = (d as JudgeVerdictData).content;
+        setOracleContent(verdict);
         // Add Oracle weft thread
         setWeftThreads((prev) => {
           if (prev.find((w) => w.id === "oracle")) return prev;
@@ -109,7 +110,7 @@ export default function ChatPage() {
     }
   }, [isLoading]);
 
-  // Auto-save reading when oracle finishes streaming
+  // Auto-save reading when oracle finishes
   useEffect(() => {
     if (isLoading || !oracleContent || expertResponses.length === 0) return;
     if (hasSavedRef.current) return;
@@ -123,7 +124,9 @@ export default function ChatPage() {
     const mappedResponses = expertResponses.map((r) => ({
       traditionId: (EXPERT_ID_TO_TRADITION[r.expertId] ?? "western") as TraditionId,
       expertName: r.expertName,
-      content: r.content,
+      content: typeof r.content === "string"
+        ? { facts: "", analysis: r.content, summary: r.content, oneLiner: r.content }
+        : r.content,
     }));
 
     saveReading({
@@ -162,8 +165,8 @@ export default function ChatPage() {
 
   const lastAssistantMessage = messages.filter((m) => m.role === "assistant").at(-1);
   const isWaitingForExperts = isLoading && expertResponses.length === 0;
-  const showOracleFromStream = !isLoading && oracleContent && !lastAssistantMessage;
-  const showOracleFromMessage = lastAssistantMessage && typeof lastAssistantMessage.content === "string";
+  const showOracleFromStream = !isLoading && oracleContent !== null;
+  const showOracleFromMessage = lastAssistantMessage && typeof lastAssistantMessage.content === "string" && !oracleContent;
   const isEmpty = messages.length === 0 && !isLoading && expertResponses.length === 0;
 
   // Status label for LoomBar
@@ -435,6 +438,7 @@ export default function ChatPage() {
                   {/* Completed expert responses */}
                   {expertResponses.map((r, i) => {
                     const tradId = EXPERT_ID_TO_TRADITION[r.expertId] ?? "western";
+                    const displayText = typeof r.content === "string" ? r.content : r.content.oneLiner;
                     return (
                       <div
                         key={r.expertId}
@@ -444,7 +448,7 @@ export default function ChatPage() {
                       >
                         <ExpertCard
                           tradition={tradId as TraditionId}
-                          text={r.content}
+                          text={displayText}
                           pending={false}
                         />
                       </div>
@@ -464,17 +468,17 @@ export default function ChatPage() {
                   {showOracleFromMessage && expertResponses.length > 0 && (
                     <ExpertCard
                       tradition="oracle"
-                      text={typeof lastAssistantMessage.content === "string" ? lastAssistantMessage.content : ""}
+                      text={typeof lastAssistantMessage!.content === "string" ? lastAssistantMessage!.content : ""}
                       pending={isLoading}
                     />
                   )}
                 </div>
 
                 {/* Oracle section — from stream data */}
-                {showOracleFromStream && (
+                {showOracleFromStream && oracleContent && (
                   <>
                     <OracleSection
-                      content={oracleContent!}
+                      content={oracleContent.summary}
                       onTapestryClick={() => router.push("/tapestry")}
                     />
                     <div style={{ marginTop: 16, marginBottom: 8 }}>
@@ -500,10 +504,10 @@ export default function ChatPage() {
                 )}
 
                 {/* Oracle from message if no stream data verdict */}
-                {showOracleFromMessage && !showOracleFromStream && expertResponses.length === 0 && (
+                {showOracleFromMessage && expertResponses.length === 0 && (
                   <>
                     <OracleSection
-                      content={typeof lastAssistantMessage.content === "string" ? lastAssistantMessage.content : ""}
+                      content={typeof lastAssistantMessage!.content === "string" ? lastAssistantMessage!.content : ""}
                       isStreaming={isLoading}
                       onTapestryClick={() => router.push("/tapestry")}
                     />

@@ -98,7 +98,9 @@ function BenchmarkColumn({ run }: { run: ModelRunState }) {
         </div>
         {run.judgeState.content ? (
           <div className="text-xs font-mono text-yellow-200/70 whitespace-pre-wrap leading-relaxed">
-            {run.judgeState.content}
+            {typeof run.judgeState.content === "string"
+              ? run.judgeState.content
+              : JSON.stringify(run.judgeState.content, null, 2)}
             {run.judgeState.status === "running" && (
               <span className="inline-block w-1.5 h-3 bg-yellow-600/60 ml-0.5 animate-pulse" />
             )}
@@ -145,7 +147,12 @@ function serializeBenchmarkState(runs: Map<string, ModelRunState>, prompt: strin
       lines.push(`  - ${s.expertEmoji} ${s.expertName}: ${s.status} | ${dur} | ${tok}${s.error ? ` | ERROR: ${s.error}` : ""}`);
     }
     lines.push("- Judge Output:");
-    lines.push(run.judgeState.content ? run.judgeState.content : "(none)");
+    const judgeContentStr = run.judgeState.content
+      ? (typeof run.judgeState.content === "string"
+          ? run.judgeState.content
+          : JSON.stringify(run.judgeState.content))
+      : "(none)";
+    lines.push(judgeContentStr);
     lines.push("");
   }
 

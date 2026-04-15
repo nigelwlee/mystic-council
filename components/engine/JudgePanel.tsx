@@ -8,7 +8,7 @@ export interface JudgePanelState {
   model: string;
   status: Status;
   resolvedSystemPrompt: string;
-  content: string;
+  content: { summary: string; oneLiner: string } | string;
   usage?: TokenUsage;
   durationMs?: number;
 }
@@ -56,7 +56,9 @@ export function JudgePanel({ state }: { state: JudgePanelState }) {
       <div className="p-3">
         {state.content ? (
           <div className="text-xs font-mono text-yellow-200/70 whitespace-pre-wrap leading-relaxed">
-            {state.content}
+            {typeof state.content === "string"
+              ? state.content
+              : JSON.stringify(state.content, null, 2)}
             {state.status === "running" && (
               <span className="inline-block w-1.5 h-3 bg-yellow-600/60 ml-0.5 animate-pulse" />
             )}
