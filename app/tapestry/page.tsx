@@ -2,8 +2,10 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { TapestryGrid, savedReadingsToGridReadings } from "@/components/loom/TapestryGrid";
 import { ShareableCard } from "@/components/shared/ShareableCard";
+import { GhostButton } from "@/components/shared/GhostButton";
 import { TRADITION_MAP, TRADITIONS } from "@/lib/constants/traditions";
 import type { TraditionId } from "@/lib/constants/traditions";
 import { useBirthData } from "@/lib/context/birth-data-context";
@@ -122,6 +124,7 @@ function mostConsulted(allTraditions: string[][]): string {
 }
 
 export default function TapestryPage() {
+  const router = useRouter();
   const { birthData } = useBirthData();
   const { readings: savedReadings } = useReadings();
 
@@ -158,6 +161,7 @@ export default function TapestryPage() {
   const recentReadings = useMemo(
     () =>
       savedReadings.slice(0, 3).map((sr) => ({
+        id: sr.id,
         date: new Date(sr.timestamp),
         question: sr.question,
         traditions: sr.traditionsConsulted.filter(
@@ -522,15 +526,22 @@ export default function TapestryPage() {
               {recentReadings.map((reading, i) => {
                 const dateStr = reading.date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
                 return (
-                  <div
+                  <Link
                     key={i}
+                    href={`/reading/${reading.id}`}
                     style={{
                       display: "flex",
                       alignItems: "flex-start",
                       gap: 16,
                       padding: "16px 0",
                       borderBottom: i < recentReadings.length - 1 ? "1px solid rgba(245,240,232,0.06)" : "none",
+                      textDecoration: "none",
+                      cursor: "pointer",
+                      opacity: 1,
+                      transition: "opacity 0.15s",
                     }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.opacity = "0.8"; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.opacity = "1"; }}
                   >
                     <div
                       style={{
@@ -571,7 +582,7 @@ export default function TapestryPage() {
                         />
                       ))}
                     </div>
-                  </div>
+                  </Link>
                 );
               })}
             </div>
@@ -599,7 +610,7 @@ export default function TapestryPage() {
           <div style={rule} />
 
           {/* ── F. Shareable Card ─────────────────────────────── */}
-          <div style={{ paddingBottom: 80 }}>
+          <div style={{ marginBottom: 40 }}>
             <div style={sectionLabel}>Your Tapestry Card</div>
 
             <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 20 }}>
@@ -630,6 +641,15 @@ export default function TapestryPage() {
                 Share your tapestry
               </button>
             </div>
+          </div>
+
+          <div style={rule} />
+
+          {/* ── G. Begin a new reading CTA ────────────────────── */}
+          <div style={{ paddingBottom: 80 }}>
+            <GhostButton onClick={() => router.push("/chat")}>
+              Begin a new reading
+            </GhostButton>
           </div>
 
         </div>

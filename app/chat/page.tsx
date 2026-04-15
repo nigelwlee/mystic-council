@@ -43,7 +43,7 @@ export default function ChatPage() {
   // LoomBar weft thread state
   const [weftThreads, setWeftThreads] = useState<WeftThread[]>([]);
 
-  const { messages, isLoading, data, append } = useChat({
+  const { messages, setMessages, isLoading, data, append } = useChat({
     api: "/api/chat",
     body: { birthData, selectedExperts: [] },
   });
@@ -145,6 +145,19 @@ export default function ChatPage() {
     if (!trimmed || isLoading) return;
     append({ role: "user", content: trimmed });
     setInputValue("");
+  };
+
+  const onAskAnother = () => {
+    setMessages([]);
+    setExpertResponses([]);
+    setOracleContent(null);
+    setWeftThreads([]);
+    setInputValue("");
+    hasSavedRef.current = false;
+    setTimeout(() => {
+      inputRef.current?.scrollIntoView({ behavior: "smooth" });
+      inputRef.current?.focus();
+    }, 50);
   };
 
   const lastAssistantMessage = messages.filter((m) => m.role === "assistant").at(-1);
@@ -459,19 +472,63 @@ export default function ChatPage() {
 
                 {/* Oracle section — from stream data */}
                 {showOracleFromStream && (
-                  <OracleSection
-                    content={oracleContent!}
-                    onTapestryClick={() => router.push("/tapestry")}
-                  />
+                  <>
+                    <OracleSection
+                      content={oracleContent!}
+                      onTapestryClick={() => router.push("/tapestry")}
+                    />
+                    <div style={{ marginTop: 16, marginBottom: 8 }}>
+                      <button
+                        onClick={onAskAnother}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          padding: 0,
+                          fontFamily: "var(--font-geist-sans)",
+                          fontSize: 11,
+                          color: "rgba(245,240,232,0.4)",
+                          cursor: "pointer",
+                          letterSpacing: "0.04em",
+                        }}
+                        onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "rgba(245,240,232,0.7)"; }}
+                        onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "rgba(245,240,232,0.4)"; }}
+                      >
+                        Ask another question
+                      </button>
+                    </div>
+                  </>
                 )}
 
                 {/* Oracle from message if no stream data verdict */}
                 {showOracleFromMessage && !showOracleFromStream && expertResponses.length === 0 && (
-                  <OracleSection
-                    content={typeof lastAssistantMessage.content === "string" ? lastAssistantMessage.content : ""}
-                    isStreaming={isLoading}
-                    onTapestryClick={() => router.push("/tapestry")}
-                  />
+                  <>
+                    <OracleSection
+                      content={typeof lastAssistantMessage.content === "string" ? lastAssistantMessage.content : ""}
+                      isStreaming={isLoading}
+                      onTapestryClick={() => router.push("/tapestry")}
+                    />
+                    {!isLoading && (
+                      <div style={{ marginTop: 16, marginBottom: 8 }}>
+                        <button
+                          onClick={onAskAnother}
+                          style={{
+                            background: "none",
+                            border: "none",
+                            padding: 0,
+                            fontFamily: "var(--font-geist-sans)",
+                            fontSize: 11,
+                            color: "rgba(245,240,232,0.4)",
+                            cursor: "pointer",
+                            letterSpacing: "0.04em",
+                          }}
+                          onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "rgba(245,240,232,0.7)"; }}
+                          onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "rgba(245,240,232,0.4)"; }}
+                        >
+                          Ask another question
+                        </button>
+                      </div>
+                    )}
+                  </>
                 )}
 
                 {/* Follow-up textarea */}
