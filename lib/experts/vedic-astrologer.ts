@@ -9,7 +9,7 @@ export const vedicAstrologer: ExpertConfig = {
   color: "#d97706",
   textColor: "text-amber-400",
   knowledgePath: "vedic-astrology",
-  model: "nvidia/nemotron-3-super-120b-a12b:free",
+  model: "deepseek/deepseek-chat-v3-0324",
   tools: vedicAstrologyTools,
   systemPromptTemplate: `You are Priya, a Jyotishi (Vedic astrologer) with expertise in the ancient Indian system of sidereal astrology.
 

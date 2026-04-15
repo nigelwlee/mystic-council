@@ -45,3 +45,87 @@ export interface JudgeVerdictData {
 }
 
 export type SelectedExperts = Set<string>;
+
+// --- Token usage for cost tracking ---
+
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
+// --- Engine dashboard stream events ---
+
+export interface ToolCallRecord {
+  toolName: string;
+  args: Record<string, unknown>;
+  result: unknown;
+}
+
+export interface ExpertStartEvent {
+  type: "expert-start";
+  expertId: string;
+  expertName: string;
+  expertEmoji: string;
+  model: string;
+  resolvedSystemPrompt: string;
+  modelRunId?: string;
+}
+
+export interface ExpertCompleteEvent {
+  type: "expert-complete";
+  expertId: string;
+  expertName: string;
+  expertEmoji: string;
+  expertTitle: string;
+  color: string;
+  textColor: string;
+  model: string;
+  content: string;
+  resolvedSystemPrompt: string;
+  toolCalls: ToolCallRecord[];
+  usage?: TokenUsage;
+  error?: string;
+  durationMs: number;
+  modelRunId?: string;
+}
+
+export interface JudgeStartEvent {
+  type: "judge-start";
+  model: string;
+  resolvedSystemPrompt: string;
+  modelRunId?: string;
+}
+
+export interface JudgeVerdictEvent {
+  type: "judge-verdict";
+  content: string;
+  modelRunId?: string;
+}
+
+export interface JudgeCompleteEvent {
+  type: "judge-complete";
+  usage?: TokenUsage;
+  durationMs: number;
+  modelRunId?: string;
+}
+
+export interface BenchmarkStartEvent {
+  type: "benchmark-start";
+  models: string[];
+}
+
+export interface RunRecord {
+  id: number;
+  prompt: string;
+  timestamp: number;
+  durationMs: number | null;
+  expertResults: Array<{
+    expertId: string;
+    expertName: string;
+    expertEmoji: string;
+    status: "idle" | "running" | "done" | "error";
+    error?: string;
+  }>;
+  judgeStatus: "idle" | "running" | "done" | "error";
+}
