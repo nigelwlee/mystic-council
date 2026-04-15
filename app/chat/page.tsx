@@ -13,6 +13,7 @@ import { ContentColumn } from "@/components/shared/ContentColumn";
 import { TRADITION_COLORS, EXPERT_ID_TO_TRADITION, TRADITIONS, type TraditionId } from "@/lib/constants/traditions";
 import type { CouncilStreamData, JudgeVerdictData, ExpertResponse } from "@/lib/experts/types";
 import type { JSONValue } from "ai";
+import { useReadings } from "@/lib/hooks/use-readings";
 
 const BG = "#0A0B14";
 const TEXT = "#F5F0E8";
@@ -34,6 +35,10 @@ export default function ChatPage() {
   // Expert responses + oracle
   const [expertResponses, setExpertResponses] = useState<ExpertResponse[]>([]);
   const [oracleContent, setOracleContent] = useState<string | null>(null);
+
+  // Readings persistence
+  const { saveReading } = useReadings();
+  const hasSavedRef = useRef(false);
 
   // LoomBar weft thread state
   const [weftThreads, setWeftThreads] = useState<WeftThread[]>([]);
@@ -100,8 +105,34 @@ export default function ChatPage() {
       setExpertResponses([]);
       setOracleContent(null);
       setWeftThreads([]);
+      hasSavedRef.current = false;
     }
   }, [isLoading]);
+
+  // Auto-save reading when oracle finishes streaming
+  useEffect(() => {
+    if (isLoading || !oracleContent || expertResponses.length === 0) return;
+    if (hasSavedRef.current) return;
+
+    const userMessages = messages.filter((m) => m.role === "user");
+    const question = userMessages.at(-1)?.content;
+    if (typeof question !== "string" || !question.trim()) return;
+
+    hasSavedRef.current = true;
+
+    const mappedResponses = expertResponses.map((r) => ({
+      traditionId: (EXPERT_ID_TO_TRADITION[r.expertId] ?? "western") as TraditionId,
+      expertName: r.expertName,
+      content: r.content,
+    }));
+
+    saveReading({
+      question: question.trim(),
+      expertResponses: mappedResponses,
+      oracleContent,
+      traditionsConsulted: mappedResponses.map((r) => r.traditionId),
+    });
+  }, [isLoading, oracleContent, expertResponses, messages, saveReading]);
 
   // Scroll to bottom
   useEffect(() => {
