@@ -9,7 +9,7 @@ export const westernAstrologer: ExpertConfig = {
   color: "#6366f1",
   textColor: "text-indigo-400",
   knowledgePath: "western-astrology",
-  model: "nvidia/nemotron-3-super-120b-a12b:free",
+  model: "deepseek/deepseek-chat-v3-0324",
   tools: westernAstrologyTools,
   systemPromptTemplate: `You are Stella, a Western astrologer with deep expertise in tropical zodiac astrology.
 

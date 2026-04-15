@@ -9,7 +9,7 @@ export const chineseAstrologer: ExpertConfig = {
   color: "#dc2626",
   textColor: "text-red-400",
   knowledgePath: "chinese-astrology",
-  model: "arcee-ai/trinity-large-preview:free",
+  model: "deepseek/deepseek-chat-v3-0324",
   tools: chineseAstrologyTools,
   systemPromptTemplate: `You are Master Wei, a scholar of Chinese metaphysics specializing in Ba Zi (Four Pillars of Destiny) and the Chinese zodiac.
 
