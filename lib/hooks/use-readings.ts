@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react";
 import type { TraditionId } from "@/lib/constants/traditions";
+import type { StructuredExpertContent } from "@/lib/experts/types";
 
 const STORAGE_KEY = "mystic-council:readings";
 const MAX_READINGS = 100;
@@ -12,15 +13,47 @@ export interface SavedReading {
   expertResponses: Array<{
     traditionId: TraditionId;
     expertName: string;
-    content: string;
+    content: StructuredExpertContent;
   }>;
-  oracleContent: string;
+  oracleContent: { summary: string; oneLiner: string };
   timestamp: string;
   traditionsConsulted: string[];
 }
 
 function isLocalStorageAvailable(): boolean {
   return typeof window !== "undefined";
+}
+
+function normalizeReading(r: Record<string, unknown>): SavedReading {
+  // Backward compat: upgrade old string content to StructuredExpertContent
+  const expertResponses = (r.expertResponses as Array<Record<string, unknown>> ?? []).map((er) => {
+    const content = er.content;
+    const normalizedContent: StructuredExpertContent =
+      typeof content === "string"
+        ? { facts: "", analysis: content, summary: content, oneLiner: content }
+        : (content as StructuredExpertContent);
+    return {
+      traditionId: er.traditionId as TraditionId,
+      expertName: er.expertName as string,
+      content: normalizedContent,
+    };
+  });
+
+  // Backward compat: upgrade old string oracleContent
+  const rawOracle = r.oracleContent;
+  const oracleContent: { summary: string; oneLiner: string } =
+    typeof rawOracle === "string"
+      ? { summary: rawOracle, oneLiner: rawOracle }
+      : (rawOracle as { summary: string; oneLiner: string });
+
+  return {
+    id: r.id as string,
+    question: r.question as string,
+    expertResponses,
+    oracleContent,
+    timestamp: r.timestamp as string,
+    traditionsConsulted: r.traditionsConsulted as string[],
+  };
 }
 
 function loadReadings(): SavedReading[] {
@@ -30,7 +63,7 @@ function loadReadings(): SavedReading[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed as SavedReading[];
+    return (parsed as Array<Record<string, unknown>>).map(normalizeReading);
   } catch {
     return [];
   }

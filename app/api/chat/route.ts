@@ -45,7 +45,7 @@ export async function POST(req: Request) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         dataStream.writeData({ type: "judge-start", model: "mock/judge-model", resolvedSystemPrompt: "[mock judge prompt with expert outputs]" } as any);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        dataStream.writeData({ type: "judge-verdict", content: mockJudgeVerdict } as any);
+        dataStream.writeData({ type: "judge-verdict", content: { summary: mockJudgeVerdict.summary, oneLiner: mockJudgeVerdict.oneLiner } } as any);
       },
     });
   }

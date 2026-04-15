@@ -129,19 +129,26 @@ export default function ReadingDetailPage({
 
             {/* Expert response cards */}
             <div style={{ display: "flex", flexDirection: "column", gap: 16, marginBottom: 40 }}>
-              {reading.expertResponses.map((response) => (
-                <ExpertCard
-                  key={response.traditionId}
-                  tradition={response.traditionId}
-                  text={response.content}
-                  pending={false}
-                />
-              ))}
+              {reading.expertResponses.map((response) => {
+                const displayText = typeof response.content === "string"
+                  ? response.content
+                  : response.content.oneLiner;
+                return (
+                  <ExpertCard
+                    key={response.traditionId}
+                    tradition={response.traditionId}
+                    text={displayText}
+                    pending={false}
+                  />
+                );
+              })}
             </div>
 
             {/* Oracle synthesis */}
             <OracleSection
-              content={reading.oracleContent}
+              content={typeof reading.oracleContent === "string"
+                ? reading.oracleContent
+                : reading.oracleContent.summary}
               isStreaming={false}
             />
 
