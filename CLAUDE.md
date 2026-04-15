@@ -100,6 +100,7 @@ Runs in main worktree. Reads the PR diff, checks code quality and conventions, a
 
 - **Framework**: Next.js 16 + React 19 (App Router)
 - **AI**: Vercel AI SDK v4 (`ai@^4.3.19`) — do NOT upgrade to v6 (breaks useChat)
+- **Zod**: v3 (`^3.25.0`) — do NOT upgrade to v4; `@ai-sdk/openai` peer dep requires v3
 - **Provider**: OpenRouter via `@ai-sdk/openai` with `baseURL: https://openrouter.ai/api/v1`
 - **UI**: shadcn/ui + Tailwind CSS v4. Always use shadcn primitives — add via `npx shadcn@latest add <component>`
 - **TypeScript**: strict mode. Use `z.infer<>` for all AI SDK tool schemas
