@@ -95,7 +95,7 @@ export default function HomePage() {
     if (form.time) data.time = form.time;
     if (form.location?.trim()) data.location = form.location.trim();
     setBirthData(data);
-    router.push("/chat");
+    router.push("/daily");
   };
 
   return (
