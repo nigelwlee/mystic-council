@@ -45,6 +45,8 @@ function defaultInput(endpoint: EndpointId): string {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+const STREAMING_ENDPOINTS: EndpointId[] = ["council", "daily"];
+
 type Tab = "oneLiner" | "summary" | "analysis" | "facts" | "raw" | "prompt";
 const TABS: { id: Tab; label: string }[] = [
   { id: "oneLiner", label: "1-liner" },
@@ -545,6 +547,12 @@ export default function EngineInspector() {
   const [viewMode, setViewMode] = useState<ViewMode>("matrix");
   const [runs, setRuns] = useState<RunLog[]>([]);
 
+  // Streaming state — populated progressively for council/daily
+  const [streamingExperts, setStreamingExperts] = useState<Record<string, unknown>[]>([]);
+  const [streamingStarted, setStreamingStarted] = useState<Set<string>>(new Set());
+  const [streamingOracle, setStreamingOracle] = useState<Record<string, unknown> | undefined>(undefined);
+  const [streamPhase, setStreamPhase] = useState<"idle" | "experts" | "oracle" | "done">("idle");
+
   useEffect(() => { setRuns(listRuns()); }, []);
 
   const selectEndpoint = (id: EndpointId) => {
@@ -552,17 +560,113 @@ export default function EngineInspector() {
     setInputJson(defaultInput(id));
   };
 
+  const finalizeResult = (data: Record<string, unknown>, body: unknown, ep: EndpointId) => {
+    setResults((prev) => ({ ...prev, [ep]: data }));
+    const expArr = Array.isArray(data.experts) ? (data.experts as Record<string, unknown>[]) : [];
+    const orc = data.oracle as Record<string, unknown> | undefined;
+    const totalTokens =
+      expArr.reduce((s, e) => s + (((e.usage as Record<string, number> | undefined)?.totalTokens) ?? 0), 0)
+      + ((orc?.usage as Record<string, number> | undefined)?.totalTokens ?? 0);
+    const totalCost = expArr.reduce((s, e) => {
+      const u = e.usage as { promptTokens: number; completionTokens: number } | undefined;
+      const m = e.model as string | undefined;
+      return s + (u && m ? estimateCost(m, u) : 0);
+    }, 0) + (() => {
+      const u = orc?.usage as { promptTokens: number; completionTokens: number } | undefined;
+      const m = orc?.model as string | undefined;
+      return u && m ? estimateCost(m, u) : 0;
+    })();
+    appendRun({
+      id: crypto.randomUUID(),
+      ts: Date.now(),
+      endpoint: ep,
+      input: body as Record<string, unknown>,
+      result: data,
+      totals: { durationMs: data.totalDurationMs as number | undefined, tokens: totalTokens, cost: totalCost },
+    });
+    setRuns(listRuns());
+  };
+
   const run = async () => {
     setIsLoading(true);
     setErrors((prev) => ({ ...prev, [endpoint]: undefined }));
     setClientMsMap((prev) => ({ ...prev, [endpoint]: undefined }));
+    // Reset streaming state
+    setStreamingExperts([]);
+    setStreamingStarted(new Set());
+    setStreamingOracle(undefined);
+    setStreamPhase("idle");
+
     const t0 = Date.now();
-    try {
-      let body: unknown;
-      try { body = JSON.parse(inputJson); } catch {
-        setErrors((prev) => ({ ...prev, [endpoint]: "Invalid JSON in input" }));
-        return;
+    let body: unknown;
+    try { body = JSON.parse(inputJson); } catch {
+      setErrors((prev) => ({ ...prev, [endpoint]: "Invalid JSON in input" }));
+      setIsLoading(false);
+      return;
+    }
+
+    // Streaming path for council/daily
+    if (STREAMING_ENDPOINTS.includes(endpoint)) {
+      const ep = endpoint;
+      try {
+        const res = await fetch(`/api/${ep}/stream`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok || !res.body) {
+          const errData = await res.json().catch(() => ({}));
+          setErrors((prev) => ({ ...prev, [ep]: JSON.stringify(errData, null, 2) }));
+          setIsLoading(false);
+          return;
+        }
+
+        setStreamPhase("experts");
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const lines = buf.split("\n");
+          buf = lines.pop() ?? "";
+          for (const line of lines) {
+            if (!line.startsWith("data: ")) continue;
+            try {
+              const event = JSON.parse(line.slice(6)) as Record<string, unknown>;
+              if (event.type === "expert-start") {
+                setStreamingStarted((prev) => new Set([...prev, event.expertId as string]));
+              } else if (event.type === "expert-complete") {
+                const { type: _t, ...expertData } = event;
+                setStreamingExperts((prev) => [...prev, expertData]);
+              } else if (event.type === "oracle-start") {
+                setStreamPhase("oracle");
+              } else if (event.type === "oracle-complete") {
+                setStreamingOracle(event.oracle as Record<string, unknown>);
+              } else if (event.type === "run-complete") {
+                const { type: _t, ...runData } = event;
+                setClientMsMap((prev) => ({ ...prev, [ep]: Date.now() - t0 }));
+                finalizeResult(runData as Record<string, unknown>, body, ep);
+                setStreamPhase("done");
+              } else if (event.type === "oracle-error") {
+                setErrors((prev) => ({ ...prev, [ep]: event.error as string }));
+              }
+            } catch { /* ignore malformed lines */ }
+          }
+        }
+      } catch (e) {
+        setErrors((prev) => ({ ...prev, [endpoint]: e instanceof Error ? e.message : String(e) }));
+      } finally {
+        setIsLoading(false);
+        setStreamPhase("done");
       }
+      return;
+    }
+
+    // Non-streaming path for other endpoints
+    try {
       const res = await fetch(`/api/${endpoint}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -573,30 +677,7 @@ export default function EngineInspector() {
       if (!res.ok) {
         setErrors((prev) => ({ ...prev, [endpoint]: JSON.stringify(data, null, 2) }));
       } else {
-        setResults((prev) => ({ ...prev, [endpoint]: data }));
-        const expArr = Array.isArray(data.experts) ? (data.experts as Record<string, unknown>[]) : [];
-        const orc = data.oracle as Record<string, unknown> | undefined;
-        const totalTokens = expArr.reduce(
-          (s, e) => s + (((e.usage as Record<string, number> | undefined)?.totalTokens) ?? 0), 0
-        ) + ((orc?.usage as Record<string, number> | undefined)?.totalTokens ?? 0);
-        const totalCost = expArr.reduce((s, e) => {
-          const u = e.usage as { promptTokens: number; completionTokens: number } | undefined;
-          const m = e.model as string | undefined;
-          return s + (u && m ? estimateCost(m, u) : 0);
-        }, 0) + (() => {
-          const u = orc?.usage as { promptTokens: number; completionTokens: number } | undefined;
-          const m = orc?.model as string | undefined;
-          return u && m ? estimateCost(m, u) : 0;
-        })();
-        appendRun({
-          id: crypto.randomUUID(),
-          ts: Date.now(),
-          endpoint,
-          input: body as Record<string, unknown>,
-          result: data,
-          totals: { durationMs: data.totalDurationMs as number | undefined, tokens: totalTokens, cost: totalCost },
-        });
-        setRuns(listRuns());
+        finalizeResult(data, body, endpoint);
       }
     } catch (e) {
       setErrors((prev) => ({ ...prev, [endpoint]: e instanceof Error ? e.message : String(e) }));
@@ -605,16 +686,31 @@ export default function EngineInspector() {
     }
   };
 
-  const result = results[endpoint] ?? null;
+  const storedResult = results[endpoint] ?? null;
   const error = errors[endpoint] ?? null;
   const clientMs = clientMsMap[endpoint] ?? null;
-  const experts = Array.isArray(result?.experts) ? (result!.experts as Record<string, unknown>[]) : null;
-  const oracle = result?.oracle as Record<string, unknown> | undefined;
-  const digest = result?.digest as Record<string, unknown> | undefined;
-  const traditions = result?.traditions as Record<string, unknown> | undefined;
-  const singleExpert = result?.expert as Record<string, unknown> | undefined;
-  const serverMs = result?.totalDurationMs as number | undefined;
-  const isMultiExpert = Boolean(experts && experts.length > 0);
+
+  // During streaming, display partial state; after done, use stored result
+  const isStreaming = isLoading && STREAMING_ENDPOINTS.includes(endpoint);
+  const result = isStreaming ? null : storedResult;
+  const liveExperts = isStreaming ? streamingExperts : null;
+  const liveOracle = isStreaming ? streamingOracle : undefined;
+
+  const experts = isStreaming
+    ? (streamingExperts.length > 0 ? streamingExperts : null)
+    : Array.isArray(storedResult?.experts) ? (storedResult!.experts as Record<string, unknown>[]) : null;
+  const oracle = isStreaming
+    ? streamingOracle
+    : storedResult?.oracle as Record<string, unknown> | undefined;
+  const digest = storedResult?.digest as Record<string, unknown> | undefined;
+  const traditions = storedResult?.traditions as Record<string, unknown> | undefined;
+  const singleExpert = storedResult?.expert as Record<string, unknown> | undefined;
+  const serverMs = storedResult?.totalDurationMs as number | undefined;
+  const isMultiExpert = Boolean(experts && experts.length > 0)
+    || (isStreaming && streamingStarted.size > 0);
+
+  // Suppress unused variable warnings — liveExperts/liveOracle used for streaming display
+  void liveExperts; void liveOracle;
 
   const totalTokens = result
     ? (experts ?? []).reduce((s, e) => s + (((e.usage as Record<string, number> | undefined)?.totalTokens) ?? 0), 0)
@@ -681,7 +777,7 @@ export default function EngineInspector() {
       {/* ── Center: results ── */}
       <div className="overflow-y-auto p-4 min-w-0">
         {/* Run header */}
-        {(result !== null || error !== null || isLoading) && (
+        {(result !== null || storedResult !== null || error !== null || isLoading) && (
           <div className="flex items-center gap-3 mb-4 text-[10px] font-mono text-neutral-600 flex-wrap">
             <span className="uppercase tracking-widest">POST /api/{endpoint}</span>
             {clientMs != null && <span>{clientMs}ms client</span>}
@@ -701,12 +797,34 @@ export default function EngineInspector() {
           </div>
         )}
 
-        {isLoading && (
-          <div className="flex items-center gap-2 text-neutral-600 text-sm">
+        {/* Streaming progress strip */}
+        {isLoading && STREAMING_ENDPOINTS.includes(endpoint) && (
+          <div className="flex items-center gap-2 mb-4 text-[10px] font-mono text-neutral-600">
+            {(["western", "chinese", "vedic", "tarot", "numerology"] as const).map((tid) => {
+              const done = streamingExperts.some((e) => e.traditionId === tid);
+              const started = streamingStarted.size > streamingExperts.length;
+              return (
+                <span
+                  key={tid}
+                  title={tid}
+                  className={`transition-colors ${done ? "text-neutral-300" : started ? "text-amber-500 animate-pulse" : "text-neutral-800"}`}
+                >
+                  {done ? "▣" : "▢"}
+                </span>
+              );
+            })}
+            <span className={`ml-1 transition-colors ${streamPhase === "oracle" ? "text-amber-500 animate-pulse" : streamPhase === "done" ? "text-neutral-300" : "text-neutral-800"}`}>◈</span>
+            <span className="ml-2 text-neutral-600">
+              {streamPhase === "oracle" ? "Oracle synthesizing…" : `${streamingExperts.length}/5 experts complete`}
+            </span>
+          </div>
+        )}
+        {isLoading && !STREAMING_ENDPOINTS.includes(endpoint) && (
+          <div className="flex items-center gap-2 text-neutral-600 text-sm mb-4">
             <span className="animate-pulse">●</span>
             <span className="animate-pulse" style={{ animationDelay: "0.15s" }}>●</span>
             <span className="animate-pulse" style={{ animationDelay: "0.3s" }}>●</span>
-            <span className="ml-2 text-xs font-mono">Waiting for council…</span>
+            <span className="ml-2 text-xs font-mono">Running…</span>
           </div>
         )}
 
@@ -716,14 +834,14 @@ export default function EngineInspector() {
           </pre>
         )}
 
-        {result && (
+        {(result !== null || isStreaming) && (
           <>
-            {/* Engine inputs */}
-            {result.input != null && (
+            {/* Engine inputs — show parsed input during streaming */}
+            {(result?.input != null || isStreaming) && (
               <section className="mb-5">
                 <div className="text-[10px] font-mono uppercase tracking-widest text-neutral-600 mb-2">Engine Inputs</div>
                 <div className="rounded border border-neutral-800 bg-neutral-900/50 p-3 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1 text-[11px] font-mono">
-                  {Object.entries(result.input as Record<string, unknown>).flatMap(([k, v]) => {
+                  {Object.entries((result?.input ?? (() => { try { return JSON.parse(inputJson); } catch { return {}; } })()) as Record<string, unknown>).flatMap(([k, v]) => {
                     if (v == null) return [];
                     if (typeof v === "object") {
                       return Object.entries(v as Record<string, unknown>).map(([k2, v2]) => (
@@ -744,24 +862,43 @@ export default function EngineInspector() {
               </section>
             )}
 
-            {/* View toggle + expert results */}
-            {isMultiExpert && (
+            {/* View toggle + expert results — also show during streaming */}
+            {(isMultiExpert || (isStreaming && streamingStarted.size > 0)) && (
               <section className="mb-6">
                 <div className="flex items-center gap-3 mb-3">
                   <div className="text-[10px] font-mono uppercase tracking-widest text-neutral-600">
-                    Experts ({experts!.length})
+                    Experts {experts ? `(${experts.length})` : `(${streamingStarted.size} started)`}
                   </div>
-                  <TabBar tabs={VIEWS} active={viewMode} onChange={(id) => setViewMode(id as ViewMode)} />
+                  {!isLoading && <TabBar tabs={VIEWS} active={viewMode} onChange={(id) => setViewMode(id as ViewMode)} />}
                 </div>
 
-                {viewMode === "matrix" && (
-                  <MatrixView experts={experts!} oracle={oracle} />
-                )}
-                {viewMode === "perExpert" && (
-                  <PerExpertView experts={experts!} oracle={oracle} />
-                )}
-                {viewMode === "timeline" && (
-                  <TimelineView experts={experts!} oracle={oracle} />
+                {/* During streaming: Per-Expert view is forced (Matrix needs all data) */}
+                {isStreaming ? (
+                  <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}>
+                    {streamingExperts.map((e, i) => <ExpertCard key={i} expert={e} />)}
+                    {Array.from({ length: Math.max(0, streamingStarted.size - streamingExperts.length) }).map((_, i) => (
+                      <SkelExpertCard key={`skel-${i}`} />
+                    ))}
+                    {oracle && (
+                      <div className="col-span-full mt-2">
+                        <OracleCard oracle={oracle} />
+                      </div>
+                    )}
+                    {streamPhase === "oracle" && !oracle && (
+                      <div className="col-span-full mt-2 rounded border border-neutral-700 bg-neutral-900/30 px-3 py-3">
+                        <div className="flex items-center gap-2 text-[10px] font-mono text-neutral-600">
+                          <span className="animate-pulse">◈</span>
+                          <span>Oracle synthesizing…</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    {viewMode === "matrix" && <MatrixView experts={experts!} oracle={oracle} />}
+                    {viewMode === "perExpert" && <PerExpertView experts={experts!} oracle={oracle} />}
+                    {viewMode === "timeline" && <TimelineView experts={experts!} oracle={oracle} />}
+                  </>
                 )}
               </section>
             )}
@@ -830,7 +967,7 @@ export default function EngineInspector() {
           </>
         )}
 
-        {!result && !error && !isLoading && <Skeleton endpoint={endpoint} />}
+        {!result && !error && !isLoading && !isStreaming && <Skeleton endpoint={endpoint} />}
       </div>
 
       {/* ── Right rail: history ── */}
