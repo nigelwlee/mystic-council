@@ -1,410 +1,362 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
-import { useChat } from "ai/react";
+import { useState } from "react";
 import { notFound } from "next/navigation";
-import { useBirthData } from "@/lib/context/birth-data-context";
-import { experts } from "@/lib/experts/registry";
-import { BaseDataPanel } from "@/components/engine/BaseDataPanel";
-import { PromptBar } from "@/components/engine/PromptBar";
-import { ExpertPanel, type ExpertPanelState } from "@/components/engine/ExpertPanel";
-import { JudgePanel, type JudgePanelState } from "@/components/engine/JudgePanel";
-import { RunSummaryBar } from "@/components/engine/RunSummaryBar";
-import { RunHistory } from "@/components/engine/RunHistory";
-import { BenchmarkResults, type ModelRunState } from "@/components/engine/BenchmarkResults";
-import type {
-  ExpertStartEvent,
-  ExpertCompleteEvent,
-  JudgeStartEvent,
-  JudgeCompleteEvent,
-  JudgeVerdictEvent,
-  RunRecord,
-} from "@/lib/experts/types";
-import type { Status } from "@/components/engine/StatusBadge";
-import type { JSONValue } from "ai";
 
-function makeIdleExpert(e: (typeof experts)[number]): ExpertPanelState {
-  return {
-    expertId: e.id,
-    expertName: e.name,
-    expertEmoji: e.emoji,
-    expertTitle: e.title,
-    color: e.color,
-    model: e.model,
-    status: "idle",
-    resolvedSystemPrompt: "",
-    content: "",
-    toolCalls: [],
-  };
+if (process.env.NODE_ENV !== "development") {
+  // Evaluated at build time on server; redirect handled below in component
 }
 
-function makeIdleExpertWithModel(e: (typeof experts)[number], modelId: string): ExpertPanelState {
-  return { ...makeIdleExpert(e), model: modelId };
+const TODAY = new Date().toLocaleDateString("en-CA");
+
+const DEFAULT_BIRTH_DATA = {
+  name: "Nigel Lee",
+  date: "1991-06-01",
+  time: "11:44",
+  latitude: 14.5995,
+  longitude: 120.9842,
+  location: "Manila",
+};
+
+type EndpointId =
+  | "council"
+  | "daily"
+  | "expert/western"
+  | "expert/chinese"
+  | "expert/vedic"
+  | "expert/tarot"
+  | "expert/numerology"
+  | "chart";
+
+const ENDPOINTS: { id: EndpointId; label: string; desc: string }[] = [
+  { id: "council", label: "Council", desc: "Full Q&A — all 5 experts + Oracle" },
+  { id: "daily", label: "Daily", desc: "Today's daily reading" },
+  { id: "expert/western", label: "Western", desc: "Stella · birth chart + transits" },
+  { id: "expert/chinese", label: "Chinese", desc: "Master Wei · Ba Zi + lunar" },
+  { id: "expert/vedic", label: "Vedic", desc: "Priya · sidereal + dasha" },
+  { id: "expert/tarot", label: "Tarot", desc: "Madame Crow · 3-card spread" },
+  { id: "expert/numerology", label: "Numerology", desc: "Pythia · life path + name" },
+  { id: "chart", label: "Chart", desc: "No-LLM raw tool outputs only" },
+];
+
+function defaultInput(endpoint: EndpointId): string {
+  const base = { birthData: DEFAULT_BIRTH_DATA, date: TODAY };
+  if (endpoint === "council") {
+    return JSON.stringify({ ...base, question: "What should I focus on this week?" }, null, 2);
+  }
+  return JSON.stringify(base, null, 2);
 }
 
-export default function EngineDashboard() {
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+type Tab = "oneLiner" | "summary" | "analysis" | "facts";
+const TABS: { id: Tab; label: string }[] = [
+  { id: "oneLiner", label: "One-liner" },
+  { id: "summary", label: "Summary" },
+  { id: "analysis", label: "Analysis" },
+  { id: "facts", label: "Facts" },
+];
+
+function ExpertCard({ expert }: { expert: Record<string, unknown> }) {
+  const [tab, setTab] = useState<Tab>("oneLiner");
+  const content = expert.content as Record<string, string> | undefined;
+  const hasError = Boolean(expert.error);
+
+  return (
+    <div
+      className="rounded border border-neutral-800 overflow-hidden flex flex-col"
+      style={{ borderLeftColor: (expert.color as string) ?? "#555", borderLeftWidth: 3 }}
+    >
+      <div className="flex items-center gap-2 px-3 py-2 bg-neutral-900">
+        <span className="text-lg">{expert.expertEmoji as string}</span>
+        <div className="flex-1 min-w-0">
+          <div className="text-xs font-mono text-neutral-300 truncate">{expert.expertName as string}</div>
+          <div className="text-[10px] text-neutral-600">{expert.traditionId as string} · {expert.durationMs != null ? `${expert.durationMs}ms` : "—"}</div>
+        </div>
+        {hasError && (
+          <span className="text-[10px] bg-red-900/50 text-red-300 px-1.5 py-0.5 rounded">error</span>
+        )}
+      </div>
+
+      {hasError ? (
+        <div className="px-3 py-2 text-[11px] text-red-400 font-mono">{expert.error as string}</div>
+      ) : (
+        <>
+          <div className="flex border-b border-neutral-800">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`flex-1 text-[10px] py-1 font-mono uppercase tracking-wider transition-colors ${
+                  tab === t.id
+                    ? "bg-neutral-800 text-neutral-100"
+                    : "text-neutral-600 hover:text-neutral-400"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <div className="px-3 py-2 text-xs text-neutral-300 leading-relaxed flex-1 overflow-y-auto max-h-48">
+            {content?.[tab] || <span className="text-neutral-600 italic">empty</span>}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function OracleCard({ oracle }: { oracle: Record<string, unknown> }) {
+  return (
+    <div className="rounded border border-neutral-700 bg-neutral-900/50 overflow-hidden">
+      <div className="px-3 py-2 border-b border-neutral-800 flex items-center gap-2">
+        <span>◈</span>
+        <span className="text-xs font-mono text-neutral-400">The Oracle</span>
+        {oracle.durationMs != null && (
+          <span className="ml-auto text-[10px] text-neutral-600">{oracle.durationMs as number}ms</span>
+        )}
+      </div>
+      <div className="px-3 py-2 space-y-2">
+        <div className="text-xs font-semibold text-amber-400/80 leading-relaxed">
+          {oracle.oneLiner as string}
+        </div>
+        <div className="text-xs text-neutral-300 leading-relaxed">
+          {oracle.summary as string}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChartTradition({ name, data }: { name: string; data: unknown }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="border border-neutral-800 rounded overflow-hidden">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-3 py-2 text-xs font-mono text-neutral-400 hover:text-neutral-200 bg-neutral-900"
+      >
+        <span>{name}</span>
+        <span>{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <pre className="px-3 py-2 text-[10px] font-mono text-neutral-400 overflow-x-auto bg-neutral-950 max-h-60 overflow-y-auto">
+          {JSON.stringify(data, null, 2)}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+function RawJson({ data }: { data: unknown }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="border border-neutral-800 rounded overflow-hidden mt-4">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-3 py-2 text-[10px] font-mono uppercase tracking-widest text-neutral-600 hover:text-neutral-400 bg-neutral-900"
+      >
+        <span>Raw JSON</span>
+        <span>{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <pre className="px-3 py-2 text-[10px] font-mono text-neutral-500 overflow-x-auto bg-neutral-950 max-h-96 overflow-y-auto">
+          {JSON.stringify(data, null, 2)}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+// ─── Main page ────────────────────────────────────────────────────────────────
+
+export default function EngineInspector() {
   if (process.env.NODE_ENV !== "development") {
     notFound();
   }
 
-  const { birthData } = useBirthData();
-  const [selectedExperts, setSelectedExperts] = useState<string[]>([]);
-  const [inputValue, setInputValue] = useState("");
-  const [expertStates, setExpertStates] = useState<Map<string, ExpertPanelState>>(new Map());
-  const [judgeState, setJudgeState] = useState<JudgePanelState>({
-    model: "",
-    status: "idle",
-    resolvedSystemPrompt: "",
-    content: "",
-  });
-  const [lastPrompt, setLastPrompt] = useState("");
-  const [runStartTime, setRunStartTime] = useState<number | null>(null);
-  const [runEndTime, setRunEndTime] = useState<number | null>(null);
-  const [runHistory, setRunHistory] = useState<RunRecord[]>([]);
+  const [endpoint, setEndpoint] = useState<EndpointId>("council");
+  const [inputJson, setInputJson] = useState(() => defaultInput("council"));
+  const [result, setResult] = useState<Record<string, unknown> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [clientMs, setClientMs] = useState<number | null>(null);
 
-  // Benchmark mode
-  const [benchmarkMode, setBenchmarkMode] = useState(false);
-  const [benchmarkModels, setBenchmarkModels] = useState<string[]>([
-    "qwen/qwen3.6-plus",
-    "qwen/qwen3.5-flash-02-23",
-  ]);
-  const [benchmarkRuns, setBenchmarkRuns] = useState<Map<string, ModelRunState>>(new Map());
-
-  const prevDataLenRef = useRef(0);
-  const prevIsLoadingRef = useRef(false);
-  const runIdRef = useRef(0);
-  const expertStatesRef = useRef(expertStates);
-  const judgeStateRef = useRef(judgeState);
-  const lastPromptRef = useRef(lastPrompt);
-  const runStartTimeRef = useRef(runStartTime);
-
-  useEffect(() => { expertStatesRef.current = expertStates; }, [expertStates]);
-  useEffect(() => { judgeStateRef.current = judgeState; }, [judgeState]);
-  useEffect(() => { lastPromptRef.current = lastPrompt; }, [lastPrompt]);
-  useEffect(() => { runStartTimeRef.current = runStartTime; }, [runStartTime]);
-
-  const { messages, isLoading, data, append } = useChat({
-    api: "/api/chat",
-    body: benchmarkMode
-      ? { birthData, selectedExperts, benchmarkModels }
-      : { birthData, selectedExperts },
-  });
-
-  const toggleExpert = useCallback((id: string) => {
-    setSelectedExperts((prev) => {
-      if (prev.length === 0) return experts.filter((e) => e.id !== id).map((e) => e.id);
-      if (prev.includes(id)) {
-        const next = prev.filter((x) => x !== id);
-        return next.length === 0 ? [] : next;
-      }
-      const next = [...prev, id];
-      return next.length === experts.length ? [] : next;
-    });
-  }, []);
-
-  // Initialize panels when loading starts
-  useEffect(() => {
-    if (isLoading) {
-      const active =
-        selectedExperts.length === 0
-          ? experts
-          : experts.filter((e) => selectedExperts.includes(e.id));
-
-      if (benchmarkMode && benchmarkModels.length >= 2) {
-        // Initialize one run per model
-        const initial = new Map<string, ModelRunState>();
-        for (const modelId of benchmarkModels) {
-          const expertMap = new Map<string, ExpertPanelState>();
-          for (const e of active) expertMap.set(e.id, makeIdleExpertWithModel(e, modelId));
-          initial.set(modelId, {
-            modelId,
-            experts: expertMap,
-            judgeState: { model: modelId, status: "idle", resolvedSystemPrompt: "", content: "" },
-            startTime: Date.now(),
-          });
-        }
-        setBenchmarkRuns(initial);
-      } else {
-        // Normal mode
-        const initial = new Map<string, ExpertPanelState>();
-        for (const e of active) initial.set(e.id, makeIdleExpert(e));
-        setExpertStates(initial);
-        setJudgeState({ model: "", status: "idle", resolvedSystemPrompt: "", content: "" });
-      }
-      prevDataLenRef.current = 0;
-    }
-  }, [isLoading, selectedExperts, benchmarkMode, benchmarkModels]);
-
-  // Detect isLoading true→false: stamp end time + record run history
-  useEffect(() => {
-    if (prevIsLoadingRef.current && !isLoading) {
-      const start = runStartTimeRef.current;
-      if (start && !benchmarkMode) {
-        const endTime = Date.now();
-        setRunEndTime(endTime);
-        const duration = endTime - start;
-        runIdRef.current += 1;
-        const id = runIdRef.current;
-        const states = expertStatesRef.current;
-        const judge = judgeStateRef.current;
-        const prompt = lastPromptRef.current;
-        setRunHistory((prev) => [
-          {
-            id,
-            prompt,
-            timestamp: start,
-            durationMs: duration,
-            expertResults: Array.from(states.values()).map((s) => ({
-              expertId: s.expertId,
-              expertName: s.expertName,
-              expertEmoji: s.expertEmoji,
-              status: s.status,
-              error: s.error,
-            })),
-            judgeStatus: judge.status,
-          },
-          ...prev,
-        ]);
-      }
-      if (benchmarkMode) {
-        // Stamp end times for all runs
-        const endTime = Date.now();
-        setBenchmarkRuns((prev) => {
-          const next = new Map(prev);
-          for (const [id, run] of next) {
-            next.set(id, { ...run, endTime: run.endTime ?? endTime });
-          }
-          return next;
-        });
-      }
-    }
-    prevIsLoadingRef.current = isLoading;
-  }, [isLoading, benchmarkMode]);
-
-  // Process stream data events
-  useEffect(() => {
-    if (!data) return;
-    const items = data as JSONValue[];
-    const start = prevDataLenRef.current;
-    if (items.length <= start) return;
-    prevDataLenRef.current = items.length;
-
-    for (let i = start; i < items.length; i++) {
-      const d = items[i] as Record<string, unknown>;
-      if (!d || typeof d !== "object" || !("type" in d)) continue;
-
-      const modelRunId = d.modelRunId as string | undefined;
-
-      if (d.type === "expert-start") {
-        const e = d as unknown as ExpertStartEvent;
-        const update = (prev: Map<string, ExpertPanelState>) => {
-          const next = new Map(prev);
-          const existing = next.get(e.expertId);
-          next.set(e.expertId, {
-            ...(existing ?? makeIdleExpert(experts.find((x) => x.id === e.expertId)!)),
-            status: "running",
-            model: e.model,
-            resolvedSystemPrompt: e.resolvedSystemPrompt,
-          });
-          return next;
-        };
-        if (modelRunId) {
-          setBenchmarkRuns((prev) => {
-            const next = new Map(prev);
-            const run = next.get(modelRunId);
-            if (run) next.set(modelRunId, { ...run, experts: update(run.experts) });
-            return next;
-          });
-        } else {
-          setExpertStates(update);
-        }
-      } else if (d.type === "expert-complete") {
-        const e = d as unknown as ExpertCompleteEvent;
-        const update = (prev: Map<string, ExpertPanelState>) => {
-          const next = new Map(prev);
-          const existing = next.get(e.expertId);
-          next.set(e.expertId, {
-            ...(existing ?? makeIdleExpert(experts.find((x) => x.id === e.expertId)!)),
-            status: e.error ? "error" : "done",
-            model: e.model,
-            resolvedSystemPrompt: e.resolvedSystemPrompt,
-            content: e.content,
-            toolCalls: e.toolCalls ?? [],
-            usage: e.usage,
-            error: e.error,
-            durationMs: e.durationMs,
-          });
-          return next;
-        };
-        if (modelRunId) {
-          setBenchmarkRuns((prev) => {
-            const next = new Map(prev);
-            const run = next.get(modelRunId);
-            if (run) next.set(modelRunId, { ...run, experts: update(run.experts) });
-            return next;
-          });
-        } else {
-          setExpertStates(update);
-        }
-      } else if (d.type === "judge-start") {
-        const j = d as unknown as JudgeStartEvent;
-        if (modelRunId) {
-          setBenchmarkRuns((prev) => {
-            const next = new Map(prev);
-            const run = next.get(modelRunId);
-            if (run) {
-              next.set(modelRunId, {
-                ...run,
-                judgeState: { ...run.judgeState, model: j.model, status: "running", resolvedSystemPrompt: j.resolvedSystemPrompt },
-              });
-            }
-            return next;
-          });
-        } else {
-          setJudgeState((prev) => ({ ...prev, model: j.model, status: "running", resolvedSystemPrompt: j.resolvedSystemPrompt }));
-        }
-      } else if (d.type === "judge-verdict") {
-        const j = d as unknown as JudgeVerdictEvent;
-        if (modelRunId) {
-          setBenchmarkRuns((prev) => {
-            const next = new Map(prev);
-            const run = next.get(modelRunId);
-            if (run) {
-              next.set(modelRunId, {
-                ...run,
-                judgeState: { ...run.judgeState, content: j.content, status: "done" },
-              });
-            }
-            return next;
-          });
-        }
-      } else if (d.type === "judge-complete") {
-        const j = d as unknown as JudgeCompleteEvent;
-        if (modelRunId) {
-          setBenchmarkRuns((prev) => {
-            const next = new Map(prev);
-            const run = next.get(modelRunId);
-            if (run) {
-              next.set(modelRunId, {
-                ...run,
-                judgeState: { ...run.judgeState, usage: j.usage, durationMs: j.durationMs },
-                endTime: run.endTime ?? Date.now(),
-              });
-            }
-            return next;
-          });
-        } else {
-          setJudgeState((prev) => ({ ...prev, usage: j.usage, durationMs: j.durationMs }));
-        }
-      }
-    }
-  }, [data]);
-
-  // Track judge content from streamed assistant messages (normal mode only)
-  const lastAssistant = messages.filter((m) => m.role === "assistant").at(-1);
-  const judgeContent =
-    typeof lastAssistant?.content === "string" ? lastAssistant.content : "";
-
-  useEffect(() => {
-    if (benchmarkMode) return;
-    if (judgeContent) {
-      setJudgeState((prev) => ({
-        ...prev,
-        content: judgeContent,
-        status: isLoading ? "running" : "done",
-      }));
-    } else if (!isLoading && judgeState.status === "running") {
-      setJudgeState((prev) => ({ ...prev, status: "done" }));
-    }
-  }, [judgeContent, isLoading, benchmarkMode]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const onSubmit = () => {
-    if (!inputValue.trim() || isLoading) return;
-    if (benchmarkMode && benchmarkModels.length < 2) return;
-    const prompt = inputValue.trim();
-    setLastPrompt(prompt);
-    setRunStartTime(Date.now());
-    setRunEndTime(null);
-    if (benchmarkMode) setBenchmarkRuns(new Map());
-    append({ role: "user", content: prompt });
-    setInputValue("");
+  const selectEndpoint = (id: EndpointId) => {
+    setEndpoint(id);
+    setInputJson(defaultInput(id));
+    setResult(null);
+    setError(null);
   };
 
-  const expertLastStatus = new Map<string, Status>();
-  for (const [id, state] of expertStates) expertLastStatus.set(id, state.status);
+  const run = async () => {
+    setIsLoading(true);
+    setError(null);
+    setResult(null);
+    setClientMs(null);
+    const t0 = Date.now();
+    try {
+      let body: unknown;
+      try {
+        body = JSON.parse(inputJson);
+      } catch {
+        setError("Invalid JSON in input");
+        return;
+      }
+      const res = await fetch(`/api/${endpoint}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      setClientMs(Date.now() - t0);
+      const data = await res.json() as Record<string, unknown>;
+      if (!res.ok) {
+        setError(JSON.stringify(data, null, 2));
+      } else {
+        setResult(data);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-  const totalDurationMs = runStartTime && runEndTime ? runEndTime - runStartTime : null;
-
-  const activeExperts =
-    selectedExperts.length === 0 ? experts : experts.filter((e) => selectedExperts.includes(e.id));
-  const panels = activeExperts.map((e) => expertStates.get(e.id) ?? makeIdleExpert(e));
+  const res = result;
+  const experts = Array.isArray(res?.experts) ? (res!.experts as Record<string, unknown>[]) : null;
+  const oracle = res?.oracle as Record<string, unknown> | undefined;
+  const traditions = res?.traditions as Record<string, unknown> | undefined;
+  const singleExpert = res?.expert as Record<string, unknown> | undefined;
+  const serverMs = res?.totalDurationMs as number | undefined;
 
   return (
-    <div className="h-[100dvh] grid grid-cols-[260px_1fr] bg-neutral-950 text-neutral-100">
-      <BaseDataPanel />
+    <div className="h-[100dvh] grid grid-cols-[280px_1fr] bg-neutral-950 text-neutral-100 overflow-hidden">
+      {/* ── Left: Controls ── */}
+      <div className="flex flex-col border-r border-neutral-800 overflow-y-auto">
+        <div className="px-4 py-3 border-b border-neutral-800">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-neutral-600 mb-2">Endpoint</div>
+          <div className="space-y-1">
+            {ENDPOINTS.map((ep) => (
+              <button
+                key={ep.id}
+                onClick={() => selectEndpoint(ep.id)}
+                className={`w-full text-left px-2 py-1.5 rounded text-xs transition-colors ${
+                  endpoint === ep.id
+                    ? "bg-neutral-800 text-neutral-100"
+                    : "text-neutral-500 hover:text-neutral-300 hover:bg-neutral-900"
+                }`}
+              >
+                <div className="font-mono">{ep.label}</div>
+                <div className="text-[10px] text-neutral-600">{ep.desc}</div>
+              </button>
+            ))}
+          </div>
+        </div>
 
-      <div className="flex flex-col min-h-0 overflow-hidden">
-        <PromptBar
-          value={inputValue}
-          onChange={setInputValue}
-          onSubmit={onSubmit}
-          selectedExperts={selectedExperts}
-          onToggleExpert={toggleExpert}
-          disabled={isLoading}
-          expertLastStatus={expertLastStatus}
-          benchmarkMode={benchmarkMode}
-          onToggleBenchmark={() => setBenchmarkMode((v) => !v)}
-          benchmarkModels={benchmarkModels}
-          onBenchmarkModelsChange={setBenchmarkModels}
-        />
-
-        {!benchmarkMode && (lastPrompt || isLoading) && (
-          <RunSummaryBar
-            lastPrompt={lastPrompt}
-            expertStates={expertStates}
-            judgeState={judgeState}
-            totalDurationMs={totalDurationMs}
-            isLoading={isLoading}
-            runStartTime={runStartTime}
-            birthData={birthData ?? {}}
+        <div className="flex-1 px-4 py-3 flex flex-col min-h-0">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-neutral-600 mb-2">Input JSON</div>
+          <textarea
+            value={inputJson}
+            onChange={(e) => setInputJson(e.target.value)}
+            className="flex-1 w-full bg-neutral-900 border border-neutral-800 text-[11px] font-mono text-neutral-300 p-2 resize-none focus:outline-none focus:border-neutral-600 rounded min-h-[200px]"
+            spellCheck={false}
           />
+        </div>
+
+        <div className="px-4 pb-4">
+          <button
+            onClick={run}
+            disabled={isLoading}
+            className="w-full py-2 text-xs font-mono uppercase tracking-widest bg-neutral-800 hover:bg-neutral-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors rounded"
+          >
+            {isLoading ? "Running…" : "▶  Run"}
+          </button>
+        </div>
+      </div>
+
+      {/* ── Right: Results ── */}
+      <div className="overflow-y-auto p-4">
+        {/* Header bar */}
+        {(result !== null || error !== null || isLoading) && (
+          <div className="flex items-center gap-3 mb-4 text-[10px] font-mono text-neutral-600">
+            <span className="uppercase tracking-widest">POST /api/{endpoint}</span>
+            {clientMs != null && <span>{clientMs}ms client</span>}
+            {serverMs != null && <span>{serverMs}ms server</span>}
+            {error && <span className="text-red-500">error</span>}
+          </div>
         )}
 
-        <div className="flex-1 overflow-y-auto p-3">
-          {benchmarkMode && benchmarkRuns.size > 0 ? (
-            <>
-              <div className="text-[10px] font-mono uppercase tracking-widest text-neutral-700 mb-2">
-                Benchmark
-              </div>
-              <BenchmarkResults runs={benchmarkRuns} lastPrompt={lastPrompt} />
-            </>
-          ) : (
-            <>
-              <div className="text-[10px] font-mono uppercase tracking-widest text-neutral-700 mb-2">
-                Expert Panels
-              </div>
-              <div
-                className="grid gap-3 mb-4"
-                style={{ gridTemplateColumns: `repeat(${Math.min(panels.length, 3)}, 1fr)` }}
-              >
-                {panels.map((p) => (
-                  <ExpertPanel key={p.expertId} state={p} />
-                ))}
-              </div>
+        {isLoading && (
+          <div className="flex items-center gap-2 text-neutral-600 text-sm">
+            <span className="animate-pulse">●</span>
+            <span className="animate-pulse" style={{ animationDelay: "0.15s" }}>●</span>
+            <span className="animate-pulse" style={{ animationDelay: "0.3s" }}>●</span>
+            <span className="ml-2 text-xs font-mono">Waiting for council…</span>
+          </div>
+        )}
 
-              <div className="text-[10px] font-mono uppercase tracking-widest text-neutral-700 mb-2">
-                Synthesizer
-              </div>
-              <JudgePanel state={judgeState} />
+        {error != null && (
+          <pre className="text-red-400 text-[11px] font-mono bg-red-950/20 border border-red-900/40 rounded p-3 whitespace-pre-wrap">
+            {error}
+          </pre>
+        )}
 
-              {runHistory.length > 0 && (
-                <div className="mt-4">
-                  <RunHistory runHistory={runHistory} />
+        {result && (
+          <>
+            {/* Expert grid — council, daily, or single expert */}
+            {experts && experts.length > 0 && (
+              <section className="mb-6">
+                <div className="text-[10px] font-mono uppercase tracking-widest text-neutral-600 mb-2">
+                  Experts ({experts.length})
                 </div>
-              )}
-            </>
-          )}
-        </div>
+                <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}>
+                  {experts.map((e, i) => (
+                    <ExpertCard key={i} expert={e} />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {singleExpert && (
+              <section className="mb-6">
+                <div className="text-[10px] font-mono uppercase tracking-widest text-neutral-600 mb-2">Expert</div>
+                <div className="max-w-md">
+                  <ExpertCard expert={singleExpert} />
+                </div>
+              </section>
+            )}
+
+            {/* Oracle */}
+            {oracle && (
+              <section className="mb-6 max-w-2xl">
+                <div className="text-[10px] font-mono uppercase tracking-widest text-neutral-600 mb-2">Oracle</div>
+                <OracleCard oracle={oracle} />
+              </section>
+            )}
+
+            {/* Chart traditions */}
+            {traditions && (
+              <section className="mb-6">
+                <div className="text-[10px] font-mono uppercase tracking-widest text-neutral-600 mb-2">
+                  Raw Chart Data
+                </div>
+                <div className="space-y-2 max-w-2xl">
+                  {Object.entries(traditions).map(([name, data]) => (
+                    <ChartTradition key={name} name={name} data={data} />
+                  ))}
+                </div>
+              </section>
+            )}
+
+            <RawJson data={result} />
+          </>
+        )}
+
+        {!result && !error && !isLoading && (
+          <div className="text-neutral-700 text-sm font-mono">
+            Select an endpoint, edit the input JSON, and click Run.
+          </div>
+        )}
       </div>
     </div>
   );

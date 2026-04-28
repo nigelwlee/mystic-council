@@ -5,10 +5,9 @@ import { judgeConfig } from "@/lib/experts/judge";
 import { parseJudgeOutput } from "@/lib/orchestrator";
 import { runSingleExpert } from "@/lib/api/run-expert";
 import { mockExpertResponses, mockJudgeVerdict } from "@/lib/mock-data";
-import { MOCK_DAILY_READING } from "@/lib/mock-daily";
 import { EXPERT_ID_TO_TRADITION } from "@/lib/constants/traditions";
-import { ContextInputSchema } from "@/lib/api/schemas";
-import type { DailyReadingResponse, ExpertReading } from "@/lib/api/schemas";
+import { QuestionInputSchema } from "@/lib/api/schemas";
+import type { CouncilReading, ExpertReading } from "@/lib/api/schemas";
 
 export const maxDuration = 60;
 
@@ -23,21 +22,20 @@ const openrouter = createOpenAI({
 
 export async function POST(req: Request) {
   const body = await req.json();
-  const parsed = ContextInputSchema.safeParse(body);
+  const parsed = QuestionInputSchema.safeParse(body);
   if (!parsed.success) {
     return Response.json({ error: parsed.error.flatten() }, { status: 400 });
   }
+  const { birthData, date, question } = parsed.data;
 
-  const { birthData, date } = parsed.data;
   const start = Date.now();
 
   if (process.env.MOCK_MODE === "true") {
-    await sleep(300 + Math.random() * 500);
-    // Build a rich mock response from the existing mock data
+    await sleep(800 + Math.random() * 400);
     const expertReadings: ExpertReading[] = mockExpertResponses.map((r) => {
-      const tid = EXPERT_ID_TO_TRADITION[r.expertId];
+      const traditionId = EXPERT_ID_TO_TRADITION[r.expertId];
       return {
-        traditionId: (tid ?? "western") as ExpertReading["traditionId"],
+        traditionId: (traditionId ?? "western") as ExpertReading["traditionId"],
         expertId: r.expertId,
         expertName: r.expertName,
         expertEmoji: r.expertEmoji,
@@ -46,33 +44,28 @@ export async function POST(req: Request) {
         content: typeof r.content === "string"
           ? { facts: "", analysis: "", summary: r.content, oneLiner: r.content }
           : r.content,
-        durationMs: 400 + Math.floor(Math.random() * 300),
+        durationMs: 600 + Math.floor(Math.random() * 400),
       };
     });
-    // Cross-check against MOCK_DAILY_READING for oneLiners (daily highlights)
-    for (const h of MOCK_DAILY_READING.expertHighlights) {
-      const er = expertReadings.find((r) => r.traditionId === h.traditionId);
-      if (er) er.content = { ...er.content, oneLiner: h.highlight };
-    }
-    const reading: DailyReadingResponse = {
+    const reading: CouncilReading = {
       id: crypto.randomUUID(),
       generatedAt: new Date().toISOString(),
-      input: { birthData, date },
+      input: { birthData, date, question },
       experts: expertReadings,
       oracle: {
         summary: mockJudgeVerdict.summary,
-        oneLiner: MOCK_DAILY_READING.oracleSummary,
-        durationMs: 300,
+        oneLiner: mockJudgeVerdict.oneLiner,
+        durationMs: 500,
       },
       totalDurationMs: Date.now() - start,
     };
     return Response.json(reading);
   }
 
-  const dailyMessage = `Give me my daily reading for ${date}. What do the stars, cards, and numbers say about today?`;
+  const userMessage = `${question}\n\nToday's date: ${date}`;
 
   const settled = await Promise.allSettled(
-    experts.map((e) => runSingleExpert(e, dailyMessage, birthData))
+    experts.map((e) => runSingleExpert(e, userMessage, birthData))
   );
 
   const expertReadings: ExpertReading[] = settled.map((r, i) => {
@@ -92,38 +85,38 @@ export async function POST(req: Request) {
   });
 
   const successful = expertReadings.filter((r) => !r.error);
-  if (successful.length === 0) {
-    return Response.json({ error: "All experts failed" }, { status: 502 });
-  }
-
   const expertOutputs = successful
-    .map((r) => `### ${r.expertName}\n${r.content.summary}`)
+    .map((r) => `### ${r.expertName}\n${r.content.analysis}`)
     .join("\n\n---\n\n");
 
   const judgeSystemPrompt = judgeConfig.systemPromptTemplate.replace("{expertOutputs}", expertOutputs);
   const judgeStart = Date.now();
+  let oracle: CouncilReading["oracle"];
 
-  let oracle: DailyReadingResponse["oracle"];
   try {
     const judgeResult = await generateText({
       model: openrouter(judgeConfig.model),
       system: judgeSystemPrompt,
-      messages: [{ role: "user", content: `Synthesize a daily reading for ${date} in 2-3 sentences.` }],
+      messages: [{ role: "user", content: question }],
     });
-    const out = parseJudgeOutput(judgeResult.text);
-    oracle = { summary: out.summary, oneLiner: out.oneLiner, durationMs: Date.now() - judgeStart };
+    const judgeOutput = parseJudgeOutput(judgeResult.text);
+    oracle = {
+      summary: judgeOutput.summary,
+      oneLiner: judgeOutput.oneLiner,
+      durationMs: Date.now() - judgeStart,
+    };
   } catch (err) {
     oracle = {
-      summary: "The oracle was unable to synthesize today's reading.",
+      summary: "The council was unable to synthesize a verdict.",
       oneLiner: err instanceof Error ? err.message : String(err),
       durationMs: Date.now() - judgeStart,
     };
   }
 
-  const reading: DailyReadingResponse = {
+  const reading: CouncilReading = {
     id: crypto.randomUUID(),
     generatedAt: new Date().toISOString(),
-    input: { birthData, date },
+    input: { birthData, date, question },
     experts: expertReadings,
     oracle,
     totalDurationMs: Date.now() - start,

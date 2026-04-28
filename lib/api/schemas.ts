@@ -1,0 +1,105 @@
+import { z } from "zod";
+
+// ─── Inputs ──────────────────────────────────────────────────────────────────
+
+export const BirthDataSchema = z.object({
+  name: z.string().optional(),
+  date: z.string().optional(),
+  time: z.string().optional(),
+  latitude: z.number().optional(),
+  longitude: z.number().optional(),
+  location: z.string().optional(),
+});
+
+export const ContextInputSchema = z.object({
+  birthData: BirthDataSchema.nullable().default(null),
+  date: z.string().default(() => new Date().toLocaleDateString("en-CA")),
+});
+
+export const QuestionInputSchema = ContextInputSchema.extend({
+  question: z.string().min(1, "question is required"),
+});
+
+// ─── Expert output ────────────────────────────────────────────────────────────
+
+export const ExpertContentSchema = z.object({
+  facts: z.string(),
+  analysis: z.string(),
+  summary: z.string(),
+  oneLiner: z.string(),
+});
+
+export const ExpertReadingSchema = z.object({
+  traditionId: z.enum(["western", "chinese", "vedic", "tarot", "numerology"]),
+  expertId: z.string(),
+  expertName: z.string(),
+  expertEmoji: z.string(),
+  color: z.string(),
+  textColor: z.string(),
+  content: ExpertContentSchema,
+  durationMs: z.number().optional(),
+  error: z.string().optional(),
+});
+
+// ─── Oracle ───────────────────────────────────────────────────────────────────
+
+export const OracleSchema = z.object({
+  summary: z.string(),
+  oneLiner: z.string(),
+  durationMs: z.number().optional(),
+});
+
+// ─── Response envelopes ───────────────────────────────────────────────────────
+
+export const CouncilReadingSchema = z.object({
+  id: z.string(),
+  generatedAt: z.string(),
+  input: QuestionInputSchema,
+  experts: z.array(ExpertReadingSchema),
+  oracle: OracleSchema,
+  totalDurationMs: z.number().optional(),
+});
+
+export const DailyReadingResponseSchema = z.object({
+  id: z.string(),
+  generatedAt: z.string(),
+  input: ContextInputSchema,
+  experts: z.array(ExpertReadingSchema),
+  oracle: OracleSchema,
+  totalDurationMs: z.number().optional(),
+});
+
+export const ExpertOnlySchema = z.object({
+  id: z.string(),
+  generatedAt: z.string(),
+  input: z.union([QuestionInputSchema, ContextInputSchema]),
+  expert: ExpertReadingSchema,
+  totalDurationMs: z.number().optional(),
+});
+
+export const ChartDataSchema = z.object({
+  id: z.string(),
+  generatedAt: z.string(),
+  input: ContextInputSchema,
+  traditions: z.object({
+    western: z.unknown().optional(),
+    chinese: z.unknown().optional(),
+    vedic: z.unknown().optional(),
+    numerology: z.unknown().optional(),
+    tarot: z.unknown().optional(),
+  }),
+  totalDurationMs: z.number().optional(),
+});
+
+// ─── Inferred types ───────────────────────────────────────────────────────────
+
+export type BirthData = z.infer<typeof BirthDataSchema>;
+export type ContextInput = z.infer<typeof ContextInputSchema>;
+export type QuestionInput = z.infer<typeof QuestionInputSchema>;
+export type ExpertContent = z.infer<typeof ExpertContentSchema>;
+export type ExpertReading = z.infer<typeof ExpertReadingSchema>;
+export type Oracle = z.infer<typeof OracleSchema>;
+export type CouncilReading = z.infer<typeof CouncilReadingSchema>;
+export type DailyReadingResponse = z.infer<typeof DailyReadingResponseSchema>;
+export type ExpertOnly = z.infer<typeof ExpertOnlySchema>;
+export type ChartData = z.infer<typeof ChartDataSchema>;
