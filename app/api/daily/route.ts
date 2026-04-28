@@ -1,8 +1,8 @@
-import { generateText } from "ai";
+import { generateObject } from "ai";
+import { z } from "zod";
 import { createOpenAI } from "@ai-sdk/openai";
 import { experts } from "@/lib/experts/registry";
 import { judgeConfig } from "@/lib/experts/judge";
-import { parseJudgeOutput } from "@/lib/orchestrator";
 import { runSingleExpert } from "@/lib/api/run-expert";
 import { mockExpertResponses, mockJudgeVerdict } from "@/lib/mock-data";
 import { MOCK_DAILY_READING } from "@/lib/mock-daily";
@@ -103,15 +103,21 @@ export async function POST(req: Request) {
   const judgeSystemPrompt = judgeConfig.systemPromptTemplate.replace("{expertOutputs}", expertOutputs);
   const judgeStart = Date.now();
 
+  const judgeSchema = z.object({
+    summary: z.string().describe("2-3 sentence synthesized daily reading across all traditions"),
+    oneLiner: z.string().describe("One sentence: the unified daily insight"),
+  });
+
   let oracle: DailyReadingResponse["oracle"];
   try {
-    const judgeResult = await generateText({
+    const judgeResult = await generateObject({
       model: openrouter(judgeConfig.model),
       system: judgeSystemPrompt,
       messages: [{ role: "user", content: `Synthesize a daily reading for ${date} in 2-3 sentences.` }],
+      schema: judgeSchema,
     });
-    const out = parseJudgeOutput(judgeResult.text);
-    oracle = { summary: out.summary, oneLiner: out.oneLiner, durationMs: Date.now() - judgeStart };
+    const obj = judgeResult.object as z.infer<typeof judgeSchema>;
+    oracle = { summary: obj.summary, oneLiner: obj.oneLiner, durationMs: Date.now() - judgeStart };
   } catch (err) {
     oracle = {
       summary: "The oracle was unable to synthesize today's reading.",

@@ -1,4 +1,4 @@
-import { generateText, convertToCoreMessages } from "ai";
+import { generateText, generateObject, convertToCoreMessages } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { z } from "zod";
 import { experts } from "./experts/registry";
@@ -88,71 +88,65 @@ export function patchToolsWithBirthData(
   return patched;
 }
 
-export function parseStructuredExpert(text: string): StructuredExpertContent {
-  // Try direct JSON parse
-  try {
-    const parsed = JSON.parse(text) as Record<string, unknown>;
-    if (parsed.facts && parsed.analysis && parsed.summary && parsed.oneLiner) {
-      return {
-        facts: String(parsed.facts),
-        analysis: String(parsed.analysis),
-        summary: String(parsed.summary),
-        oneLiner: String(parsed.oneLiner),
-      };
-    }
-  } catch {
-    // fall through
-  }
+function coerceToString(val: unknown): string {
+  if (typeof val === "string") return val;
+  if (val && typeof val === "object") return JSON.stringify(val, null, 2);
+  return "";
+}
 
-  // Try extracting from markdown code fences
-  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fenceMatch) {
+function extractJson(text: string): Record<string, unknown> | null {
+  const attempts: string[] = [
+    text,
+    // Strip code fences then strip leading "json" language tag (LLM sometimes puts it on own line)
+    text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/, "").replace(/^json\s*/i, ""),
+    // Find first { ... } block anywhere in the text
+    (text.match(/\{[\s\S]*\}/) ?? [])[0] ?? "",
+  ];
+  for (const candidate of attempts) {
+    if (!candidate) continue;
     try {
-      const parsed = JSON.parse(fenceMatch[1]) as Record<string, unknown>;
-      if (parsed.facts && parsed.analysis && parsed.summary && parsed.oneLiner) {
-        return {
-          facts: String(parsed.facts),
-          analysis: String(parsed.analysis),
-          summary: String(parsed.summary),
-          oneLiner: String(parsed.oneLiner),
-        };
-      }
-    } catch {
-      // fall through
-    }
+      const parsed = JSON.parse(candidate) as Record<string, unknown>;
+      if (parsed && typeof parsed === "object") return parsed;
+    } catch { /* try next */ }
   }
+  return null;
+}
 
-  // Fallback
-  return { facts: "", analysis: "", summary: text, oneLiner: text };
+export function parseStructuredExpert(text: string): StructuredExpertContent {
+  const parsed = extractJson(text);
+  if (parsed && ("facts" in parsed || "analysis" in parsed || "summary" in parsed)) {
+    return {
+      facts: coerceToString(parsed.facts),
+      analysis: coerceToString(parsed.analysis),
+      summary: coerceToString(parsed.summary),
+      oneLiner: coerceToString(parsed.oneLiner),
+    };
+  }
+  return { facts: "", analysis: "", summary: text, oneLiner: "" };
 }
 
 export function parseJudgeOutput(text: string): { summary: string; oneLiner: string } {
-  // Try direct JSON parse
-  try {
-    const parsed = JSON.parse(text) as Record<string, unknown>;
-    if (parsed.summary && parsed.oneLiner) {
-      return { summary: String(parsed.summary), oneLiner: String(parsed.oneLiner) };
-    }
-  } catch {
-    // fall through
+  const parsed = extractJson(text);
+  if (parsed && (parsed.summary || parsed.oneLiner)) {
+    return { summary: coerceToString(parsed.summary), oneLiner: coerceToString(parsed.oneLiner) };
   }
-
-  // Try extracting from markdown code fences
-  const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fenceMatch) {
-    try {
-      const parsed = JSON.parse(fenceMatch[1]) as Record<string, unknown>;
-      if (parsed.summary && parsed.oneLiner) {
-        return { summary: String(parsed.summary), oneLiner: String(parsed.oneLiner) };
-      }
-    } catch {
-      // fall through
-    }
-  }
-
-  // Fallback
-  return { summary: text, oneLiner: text };
+  return { summary: text, oneLiner: "" };
 }
+
+const EXPERT_OUTPUT_FORMAT = `
+
+OUTPUT FORMAT — STRICT JSON ONLY. All four values MUST be plain text strings — never nested objects or arrays.
+{
+  "facts": "Write a prose paragraph of specific raw observations: positions, degrees, card names, pillar elements, life path number, etc. Example: 'Your Moon is in Sagittarius at 10.6°. Mercury is in Pisces at 26.1°. Saturn is in Aquarius.' Do NOT use nested objects.",
+  "analysis": "3-5 sentences interpreting what these facts mean for this specific person and question.",
+  "summary": "2-3 sentence reading capturing the essence.",
+  "oneLiner": "One sentence: the single most important insight."
+}`;
+
+const JUDGE_OUTPUT_SCHEMA = z.object({
+  summary: z.string().describe("3-5 sentence synthesized reading across all traditions, in plain everyday language"),
+  oneLiner: z.string().describe("One sentence: the unified insight from all traditions"),
+});
 
 export async function runCouncil(
   messages: Message[],
@@ -161,7 +155,9 @@ export async function runCouncil(
   dataStream: DataStreamWriter,
   modelOverride?: string,
   modelRunId?: string,
+  date?: string,
 ) {
+  const todayStr = date ?? new Date().toLocaleDateString("en-CA");
   const tag = modelRunId ? { modelRunId } : {};
   const activeExperts = experts.filter((e) =>
     selectedExpertIds.length === 0 || selectedExpertIds.includes(e.id)
@@ -177,13 +173,8 @@ export async function runCouncil(
       const systemPrompt = expert.systemPromptTemplate
         .replace("{knowledge}", knowledge)
         .replace("{birthData}", birthDataStr)
-        + `\n\nOUTPUT FORMAT — RESPOND WITH VALID JSON ONLY:
-{
-  "facts": "Raw observations from your tradition. Name specific positions, cards, numbers, pillars. Data only, no interpretation.",
-  "analysis": "What these facts mean for this specific person and question. 3-5 sentences of interpretation.",
-  "summary": "2-3 sentence reading capturing the essence.",
-  "oneLiner": "One sentence: the key insight and its implication for the user."
-}`;
+        + `\n\nToday's date: ${todayStr}`
+        + EXPERT_OUTPUT_FORMAT;
 
       const effectiveModel = modelOverride ?? expert.model;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -276,13 +267,13 @@ export async function runCouncil(
 
   const judgeStartTime = Date.now();
 
-  // Always use generateText so oracle emits structured judge-verdict event
-  const judgeResult = await generateWithRetry({
+  const judgeResult = await generateObject({
     model: openrouter(effectiveJudgeModel),
     system: judgeSystemPrompt,
     messages: [{ role: "user", content: userContent }],
+    schema: JUDGE_OUTPUT_SCHEMA,
   });
-  const judgeVerdict = parseJudgeOutput(judgeResult.text);
+  const judgeVerdict = judgeResult.object as z.infer<typeof JUDGE_OUTPUT_SCHEMA>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   dataStream.writeData({ type: "judge-verdict", content: judgeVerdict, ...tag } as any);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

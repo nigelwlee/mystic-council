@@ -13,12 +13,12 @@ const openrouter = createOpenAI({
 
 export const EXPERT_OUTPUT_RULES = `
 
-OUTPUT FORMAT — RESPOND WITH VALID JSON ONLY:
+OUTPUT FORMAT — STRICT JSON ONLY. All four values MUST be plain text strings — never nested objects or arrays.
 {
-  "facts": "Raw observations from your tradition. Name specific positions, cards, numbers, pillars. Data only, no interpretation.",
-  "analysis": "What these facts mean for this specific person and question. 3-5 sentences of interpretation.",
+  "facts": "Write a prose paragraph of specific raw observations: positions, degrees, card names, pillar elements, life path number, etc. Example: 'Your Moon is in Sagittarius at 10.6°. Mercury is in Pisces at 26.1°. Saturn is in Aquarius.' Do NOT use nested objects.",
+  "analysis": "3-5 sentences interpreting what these facts mean for this specific person and question.",
   "summary": "2-3 sentence reading capturing the essence.",
-  "oneLiner": "One sentence: the key insight and its implication for the user."
+  "oneLiner": "One sentence: the single most important insight."
 }`;
 
 export async function runSingleExpert(

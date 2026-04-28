@@ -1,8 +1,8 @@
-import { generateText } from "ai";
+import { generateObject } from "ai";
+import { z } from "zod";
 import { createOpenAI } from "@ai-sdk/openai";
 import { experts } from "@/lib/experts/registry";
 import { judgeConfig } from "@/lib/experts/judge";
-import { parseJudgeOutput } from "@/lib/orchestrator";
 import { runSingleExpert } from "@/lib/api/run-expert";
 import { mockExpertResponses, mockJudgeVerdict } from "@/lib/mock-data";
 import { EXPERT_ID_TO_TRADITION } from "@/lib/constants/traditions";
@@ -93,16 +93,22 @@ export async function POST(req: Request) {
   const judgeStart = Date.now();
   let oracle: CouncilReading["oracle"];
 
+  const judgeSchema = z.object({
+    summary: z.string().describe("3-5 sentence synthesized reading across all traditions"),
+    oneLiner: z.string().describe("One sentence: the unified insight"),
+  });
+
   try {
-    const judgeResult = await generateText({
+    const judgeResult = await generateObject({
       model: openrouter(judgeConfig.model),
       system: judgeSystemPrompt,
       messages: [{ role: "user", content: question }],
+      schema: judgeSchema,
     });
-    const judgeOutput = parseJudgeOutput(judgeResult.text);
+    const obj = judgeResult.object as z.infer<typeof judgeSchema>;
     oracle = {
-      summary: judgeOutput.summary,
-      oneLiner: judgeOutput.oneLiner,
+      summary: obj.summary,
+      oneLiner: obj.oneLiner,
       durationMs: Date.now() - judgeStart,
     };
   } catch (err) {

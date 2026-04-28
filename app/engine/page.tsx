@@ -7,8 +7,6 @@ if (process.env.NODE_ENV !== "development") {
   // Evaluated at build time on server; redirect handled below in component
 }
 
-const TODAY = new Date().toLocaleDateString("en-CA");
-
 const DEFAULT_BIRTH_DATA = {
   name: "Nigel Lee",
   date: "1991-06-01",
@@ -40,7 +38,7 @@ const ENDPOINTS: { id: EndpointId; label: string; desc: string }[] = [
 ];
 
 function defaultInput(endpoint: EndpointId): string {
-  const base = { birthData: DEFAULT_BIRTH_DATA, date: TODAY };
+  const base = { birthData: DEFAULT_BIRTH_DATA, date: new Date().toLocaleDateString("en-CA") };
   if (endpoint === "council") {
     return JSON.stringify({ ...base, question: "What should I focus on this week?" }, null, 2);
   }

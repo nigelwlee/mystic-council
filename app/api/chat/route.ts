@@ -11,11 +11,12 @@ function sleep(ms: number) {
 }
 
 export async function POST(req: Request) {
-  const { messages, birthData, selectedExperts, benchmarkModels } = (await req.json()) as {
+  const { messages, birthData, selectedExperts, benchmarkModels, date } = (await req.json()) as {
     messages: Message[];
     birthData: BirthData | null;
     selectedExperts: string[];
     benchmarkModels?: string[];
+    date?: string;
   };
 
   if (process.env.MOCK_MODE === "true") {
@@ -58,7 +59,7 @@ export async function POST(req: Request) {
         dataStream.writeData({ type: "benchmark-start", models: benchmarkModels } as any);
         await Promise.all(
           benchmarkModels.map((modelId: string) =>
-            runCouncil(messages, birthData, selectedExperts ?? [], dataStream, modelId, modelId)
+            runCouncil(messages, birthData, selectedExperts ?? [], dataStream, modelId, modelId, date)
           )
         );
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -73,7 +74,7 @@ export async function POST(req: Request) {
 
   return createDataStreamResponse({
     execute: async (dataStream) => {
-      await runCouncil(messages, birthData, selectedExperts ?? [], dataStream);
+      await runCouncil(messages, birthData, selectedExperts ?? [], dataStream, undefined, undefined, date);
     },
     onError: (error) => {
       console.error("Council error:", error);
