@@ -610,6 +610,7 @@ export default function EngineInspector() {
   const clientMs = clientMsMap[endpoint] ?? null;
   const experts = Array.isArray(result?.experts) ? (result!.experts as Record<string, unknown>[]) : null;
   const oracle = result?.oracle as Record<string, unknown> | undefined;
+  const digest = result?.digest as Record<string, unknown> | undefined;
   const traditions = result?.traditions as Record<string, unknown> | undefined;
   const singleExpert = result?.expert as Record<string, unknown> | undefined;
   const serverMs = result?.totalDurationMs as number | undefined;
@@ -780,6 +781,36 @@ export default function EngineInspector() {
               <section className="mb-6 max-w-2xl">
                 <div className="text-[10px] font-mono uppercase tracking-widest text-neutral-600 mb-2">Oracle</div>
                 <OracleCard oracle={oracle} />
+              </section>
+            )}
+
+            {/* Daily digest (council + dailyDigest:true) */}
+            {digest && (
+              <section className="mb-6 max-w-2xl">
+                <div className="text-[10px] font-mono uppercase tracking-widest text-neutral-600 mb-2">Daily Digest</div>
+                <div className="rounded border border-amber-900/40 bg-amber-950/10 overflow-hidden">
+                  <div className="px-3 py-2 border-b border-amber-900/30 flex items-center gap-2 text-[10px] font-mono text-neutral-600">
+                    <span>◉</span>
+                    <span>digest</span>
+                    {digest.durationMs != null && <span className="ml-auto">{digest.durationMs as number}ms</span>}
+                  </div>
+                  <div className="px-3 py-2 space-y-2">
+                    <div className="text-xs font-semibold text-amber-400/80">{digest.oneLiner as string}</div>
+                    <div className="text-xs text-neutral-300 leading-relaxed">{digest.summary as string}</div>
+                    {Boolean(digest.expertExcerpts) && (
+                      <div className="pt-2 border-t border-amber-900/20 space-y-1">
+                        {Object.entries(digest.expertExcerpts as Record<string, string>).map(([tid, excerpt]) =>
+                          excerpt ? (
+                            <div key={tid} className="flex gap-2 text-[11px]">
+                              <span className="text-neutral-700 w-16 flex-shrink-0 font-mono">{tid}</span>
+                              <span className="text-neutral-400">{excerpt}</span>
+                            </div>
+                          ) : null
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </section>
             )}
 

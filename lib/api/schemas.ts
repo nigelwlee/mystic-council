@@ -18,6 +18,7 @@ export const ContextInputSchema = z.object({
 
 export const QuestionInputSchema = ContextInputSchema.extend({
   question: z.string().min(1, "question is required"),
+  dailyDigest: z.boolean().optional(),
 });
 
 // ─── Expert output ────────────────────────────────────────────────────────────
@@ -64,6 +65,24 @@ export const OracleSchema = z.object({
   userMessage: z.string().optional(),
 });
 
+// ─── Daily digest (optional council add-on) ───────────────────────────────────
+
+export const ExpertExcerptsSchema = z.object({
+  western: z.string().optional(),
+  chinese: z.string().optional(),
+  vedic: z.string().optional(),
+  tarot: z.string().optional(),
+  numerology: z.string().optional(),
+});
+
+export const DigestSchema = z.object({
+  oneLiner: z.string().describe("One sentence daily reading"),
+  summary: z.string().describe("2-3 sentence daily overview"),
+  expertExcerpts: ExpertExcerptsSchema,
+  durationMs: z.number().optional(),
+  usage: TokenUsageSchema.optional(),
+});
+
 // ─── Response envelopes ───────────────────────────────────────────────────────
 
 export const CouncilReadingSchema = z.object({
@@ -72,6 +91,7 @@ export const CouncilReadingSchema = z.object({
   input: QuestionInputSchema,
   experts: z.array(ExpertReadingSchema),
   oracle: OracleSchema,
+  digest: DigestSchema.optional(),
   totalDurationMs: z.number().optional(),
 });
 
@@ -109,6 +129,8 @@ export const ChartDataSchema = z.object({
 // ─── Inferred types ───────────────────────────────────────────────────────────
 
 export type TokenUsage = z.infer<typeof TokenUsageSchema>;
+export type ExpertExcerpts = z.infer<typeof ExpertExcerptsSchema>;
+export type Digest = z.infer<typeof DigestSchema>;
 export type BirthData = z.infer<typeof BirthDataSchema>;
 export type ContextInput = z.infer<typeof ContextInputSchema>;
 export type QuestionInput = z.infer<typeof QuestionInputSchema>;
