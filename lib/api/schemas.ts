@@ -40,6 +40,9 @@ export const ExpertReadingSchema = z.object({
   durationMs: z.number().optional(),
   error: z.string().optional(),
   rawText: z.string().optional(),
+  systemPrompt: z.string().optional(),
+  model: z.string().optional(),
+  userMessage: z.string().optional(),
 });
 
 // ─── Oracle ───────────────────────────────────────────────────────────────────
@@ -48,6 +51,9 @@ export const OracleSchema = z.object({
   summary: z.string(),
   oneLiner: z.string(),
   durationMs: z.number().optional(),
+  systemPrompt: z.string().optional(),
+  model: z.string().optional(),
+  userMessage: z.string().optional(),
 });
 
 // ─── Response envelopes ───────────────────────────────────────────────────────

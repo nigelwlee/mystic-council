@@ -112,17 +112,86 @@ function extractJson(text: string): Record<string, unknown> | null {
   return null;
 }
 
+// Map a normalized section heading to one of our 4 canonical keys.
+// Returns null if the heading doesn't match any.
+function canonicalSectionKey(heading: string): keyof StructuredExpertContent | null {
+  const norm = heading.toLowerCase().replace(/[*_`:]/g, "").replace(/[\s-]+/g, "");
+  if (norm === "facts" || norm === "rawobservations" || norm === "observations") return "facts";
+  if (norm === "analysis" || norm === "interpretation") return "analysis";
+  if (norm === "summary" || norm === "reading") return "summary";
+  if (norm === "oneliner" || norm === "keyinsight" || norm === "tldr") return "oneLiner";
+  return null;
+}
+
+// Split markdown by section headings (#, ##, ###, ####) and bold-only "labels".
+// Returns sections keyed by canonical name + leftover text outside any matched section.
+function extractMarkdownSections(text: string): { sections: Partial<StructuredExpertContent>; leftover: string } {
+  const sections: Partial<StructuredExpertContent> = {};
+  // Match either a heading (### Heading) or a bold-only label line (**Label**:)
+  const headingRe = /^(?:#{1,6}\s*(.+?)\s*$|\*\*(.+?)\*\*\s*:?\s*$)/gm;
+  const matches: { key: keyof StructuredExpertContent; start: number; end: number }[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = headingRe.exec(text)) !== null) {
+    const heading = (m[1] ?? m[2] ?? "").trim();
+    const key = canonicalSectionKey(heading);
+    if (key) matches.push({ key, start: m.index, end: m.index + m[0].length });
+  }
+  // Also catch inline "**One-Liner**: text" on a single line
+  const inlineRe = /\*\*(one[\s-]?liner|tl;?dr|key insight)\*\*\s*:?\s*([^\n]+)/i;
+  const inline = text.match(inlineRe);
+  if (inline && !matches.some((mm) => mm.key === "oneLiner")) {
+    sections.oneLiner = inline[2].trim().replace(/^["']|["']$/g, "");
+  }
+  // Slice content between consecutive matched section starts
+  for (let i = 0; i < matches.length; i++) {
+    const cur = matches[i];
+    const next = matches[i + 1];
+    const body = text.slice(cur.end, next ? next.start : text.length).trim();
+    sections[cur.key] = body;
+  }
+  // Leftover = anything before the first match
+  const leftover = matches.length > 0 ? text.slice(0, matches[0].start).trim() : "";
+  return { sections, leftover };
+}
+
+// Pull a "one-liner" out of free-form text: the last non-trivial sentence,
+// or the first sentence after a ":" terminator.
+function deriveOneLiner(text: string): string {
+  if (!text) return "";
+  const cleaned = text.replace(/^["']|["']$/g, "").trim();
+  // Last sentence
+  const sentences = cleaned.split(/(?<=[.!?])\s+/).filter((s) => s.trim().length > 10);
+  if (sentences.length === 0) return cleaned.slice(0, 200);
+  return sentences[sentences.length - 1].trim().replace(/^["']|["']$/g, "");
+}
+
 export function parseStructuredExpert(text: string): StructuredExpertContent {
+  // 1. Try JSON
   const parsed = extractJson(text);
   if (parsed && ("facts" in parsed || "analysis" in parsed || "summary" in parsed)) {
     return {
       facts: coerceToString(parsed.facts),
       analysis: coerceToString(parsed.analysis),
       summary: coerceToString(parsed.summary),
-      oneLiner: coerceToString(parsed.oneLiner),
+      oneLiner: coerceToString(parsed.oneLiner) || deriveOneLiner(coerceToString(parsed.summary)),
     };
   }
-  return { facts: "", analysis: "", summary: text, oneLiner: "" };
+
+  // 2. Try markdown section extraction
+  const { sections } = extractMarkdownSections(text);
+  if (Object.keys(sections).length > 0) {
+    // Strip wrapping quotes and leading/trailing whitespace from oneLiner
+    const oneLiner = (sections.oneLiner ?? "").replace(/^\s*["']|["']\s*$/g, "").trim();
+    return {
+      facts: sections.facts ?? "",
+      analysis: sections.analysis ?? "",
+      summary: sections.summary ?? "",
+      oneLiner: oneLiner || deriveOneLiner(sections.summary ?? sections.analysis ?? text),
+    };
+  }
+
+  // 3. Last resort: dump full text into summary, derive a oneLiner
+  return { facts: "", analysis: "", summary: text, oneLiner: deriveOneLiner(text) };
 }
 
 export function parseJudgeOutput(text: string): { summary: string; oneLiner: string } {

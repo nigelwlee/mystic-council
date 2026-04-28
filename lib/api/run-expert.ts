@@ -62,6 +62,9 @@ export async function runSingleExpert(
       },
       durationMs: Date.now() - start,
       rawText: result.text,
+      systemPrompt,
+      model: expert.model,
+      userMessage,
     };
   } catch (err) {
     return {
@@ -74,6 +77,9 @@ export async function runSingleExpert(
       content: { facts: "", analysis: "", summary: "", oneLiner: "" },
       durationMs: Date.now() - start,
       error: err instanceof Error ? err.message : String(err),
+      systemPrompt,
+      model: expert.model,
+      userMessage,
     };
   }
 }

@@ -110,12 +110,18 @@ export async function POST(req: Request) {
       summary: obj.summary,
       oneLiner: obj.oneLiner,
       durationMs: Date.now() - judgeStart,
+      systemPrompt: judgeSystemPrompt,
+      model: judgeConfig.model,
+      userMessage: question,
     };
   } catch (err) {
     oracle = {
       summary: "The council was unable to synthesize a verdict.",
       oneLiner: err instanceof Error ? err.message : String(err),
       durationMs: Date.now() - judgeStart,
+      systemPrompt: judgeSystemPrompt,
+      model: judgeConfig.model,
+      userMessage: question,
     };
   }
 

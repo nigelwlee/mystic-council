@@ -108,21 +108,32 @@ export async function POST(req: Request) {
     oneLiner: z.string().describe("One sentence: the unified daily insight"),
   });
 
+  const judgeUserMessage = `Synthesize a daily reading for ${date} in 2-3 sentences.`;
   let oracle: DailyReadingResponse["oracle"];
   try {
     const judgeResult = await generateObject({
       model: openrouter(judgeConfig.model),
       system: judgeSystemPrompt,
-      messages: [{ role: "user", content: `Synthesize a daily reading for ${date} in 2-3 sentences.` }],
+      messages: [{ role: "user", content: judgeUserMessage }],
       schema: judgeSchema,
     });
     const obj = judgeResult.object as z.infer<typeof judgeSchema>;
-    oracle = { summary: obj.summary, oneLiner: obj.oneLiner, durationMs: Date.now() - judgeStart };
+    oracle = {
+      summary: obj.summary,
+      oneLiner: obj.oneLiner,
+      durationMs: Date.now() - judgeStart,
+      systemPrompt: judgeSystemPrompt,
+      model: judgeConfig.model,
+      userMessage: judgeUserMessage,
+    };
   } catch (err) {
     oracle = {
       summary: "The oracle was unable to synthesize today's reading.",
       oneLiner: err instanceof Error ? err.message : String(err),
       durationMs: Date.now() - judgeStart,
+      systemPrompt: judgeSystemPrompt,
+      model: judgeConfig.model,
+      userMessage: judgeUserMessage,
     };
   }
 
