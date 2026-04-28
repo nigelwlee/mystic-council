@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Fragment } from "react";
 import { notFound } from "next/navigation";
 
 if (process.env.NODE_ENV !== "development") {
@@ -301,6 +301,32 @@ export default function EngineInspector() {
 
         {result && (
           <>
+            {/* Engine inputs transparency */}
+            {result.input != null && (
+              <section className="mb-6">
+                <div className="text-[10px] font-mono uppercase tracking-widest text-neutral-600 mb-2">Engine Inputs</div>
+                <div className="rounded border border-neutral-800 bg-neutral-900/50 p-3 grid grid-cols-[auto_1fr] gap-x-6 gap-y-1 text-[11px] font-mono">
+                  {Object.entries(result.input as Record<string, unknown>).flatMap(([k, v]) => {
+                    if (v == null) return [];
+                    if (typeof v === "object") {
+                      return Object.entries(v as Record<string, unknown>).map(([k2, v2]) => (
+                        <Fragment key={`${k}.${k2}`}>
+                          <span className="text-neutral-600 whitespace-nowrap">{k}.{k2}</span>
+                          <span className="text-neutral-300 truncate">{String(v2)}</span>
+                        </Fragment>
+                      ));
+                    }
+                    return [
+                      <Fragment key={k}>
+                        <span className="text-neutral-600 whitespace-nowrap">{k}</span>
+                        <span className="text-neutral-300 truncate">{String(v)}</span>
+                      </Fragment>,
+                    ];
+                  })}
+                </div>
+              </section>
+            )}
+
             {/* Expert grid — council, daily, or single expert */}
             {experts && experts.length > 0 && (
               <section className="mb-6">
