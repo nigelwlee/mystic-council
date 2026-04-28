@@ -61,6 +61,7 @@ export async function runSingleExpert(
         oneLiner: structured.oneLiner,
       },
       durationMs: Date.now() - start,
+      rawText: result.text,
     };
   } catch (err) {
     return {

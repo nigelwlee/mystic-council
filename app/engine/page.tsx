@@ -47,18 +47,37 @@ function defaultInput(endpoint: EndpointId): string {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-type Tab = "oneLiner" | "summary" | "analysis" | "facts";
+type Tab = "oneLiner" | "summary" | "analysis" | "facts" | "raw";
 const TABS: { id: Tab; label: string }[] = [
   { id: "oneLiner", label: "One-liner" },
   { id: "summary", label: "Summary" },
   { id: "analysis", label: "Analysis" },
   { id: "facts", label: "Facts" },
+  { id: "raw", label: "Raw" },
 ];
+
+function CopyButton({ value, label = "Copy" }: { value: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <button
+      onClick={async () => {
+        await navigator.clipboard.writeText(value);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      }}
+      className="text-[10px] font-mono uppercase tracking-widest text-neutral-500 hover:text-neutral-200 px-2 py-1 border border-neutral-800 hover:border-neutral-600 rounded transition-colors"
+    >
+      {copied ? "Copied!" : label}
+    </button>
+  );
+}
 
 function ExpertCard({ expert }: { expert: Record<string, unknown> }) {
   const [tab, setTab] = useState<Tab>("oneLiner");
   const content = expert.content as Record<string, string> | undefined;
+  const rawText = expert.rawText as string | undefined;
   const hasError = Boolean(expert.error);
+  const tabValue = tab === "raw" ? rawText : content?.[tab];
 
   return (
     <div
@@ -96,7 +115,15 @@ function ExpertCard({ expert }: { expert: Record<string, unknown> }) {
             ))}
           </div>
           <div className="px-3 py-2 text-xs text-neutral-300 leading-relaxed flex-1 overflow-y-auto max-h-48">
-            {content?.[tab] || <span className="text-neutral-600 italic">empty</span>}
+            {tab === "raw" ? (
+              rawText ? (
+                <pre className="text-[10px] font-mono text-neutral-400 whitespace-pre-wrap break-all">{rawText}</pre>
+              ) : (
+                <span className="text-neutral-600 italic">no raw text captured</span>
+              )
+            ) : (
+              tabValue || <span className="text-neutral-600 italic">empty</span>
+            )}
           </div>
         </>
       )}
@@ -161,6 +188,101 @@ function RawJson({ data }: { data: unknown }) {
         <pre className="px-3 py-2 text-[10px] font-mono text-neutral-500 overflow-x-auto bg-neutral-950 max-h-96 overflow-y-auto">
           {JSON.stringify(data, null, 2)}
         </pre>
+      )}
+    </div>
+  );
+}
+
+function SkelLine({ w = "100%" }: { w?: string }) {
+  return <div className="h-2 bg-neutral-900 rounded" style={{ width: w }} />;
+}
+
+function SkelExpertCard() {
+  return (
+    <div className="rounded border border-neutral-800 overflow-hidden flex flex-col" style={{ borderLeftColor: "#333", borderLeftWidth: 3 }}>
+      <div className="flex items-center gap-2 px-3 py-2 bg-neutral-900">
+        <div className="w-5 h-5 bg-neutral-800 rounded" />
+        <div className="flex-1 space-y-1.5">
+          <SkelLine w="60%" />
+          <SkelLine w="40%" />
+        </div>
+      </div>
+      <div className="flex border-b border-neutral-800">
+        {TABS.map((t) => (
+          <div key={t.id} className="flex-1 text-[10px] py-1 font-mono uppercase tracking-wider text-neutral-700 text-center">
+            {t.label}
+          </div>
+        ))}
+      </div>
+      <div className="px-3 py-3 space-y-2">
+        <SkelLine />
+        <SkelLine w="85%" />
+        <SkelLine w="65%" />
+      </div>
+    </div>
+  );
+}
+
+function Skeleton({ endpoint }: { endpoint: EndpointId }) {
+  const showExperts = endpoint === "council" || endpoint === "daily";
+  const showSingleExpert = endpoint.startsWith("expert/");
+  const showOracle = endpoint === "council" || endpoint === "daily";
+  const showChart = endpoint === "chart";
+  const expertCount = endpoint === "council" || endpoint === "daily" ? 5 : 1;
+
+  return (
+    <div className="opacity-40">
+      <div className="flex items-center gap-3 mb-4 text-[10px] font-mono text-neutral-700">
+        <span className="uppercase tracking-widest">POST /api/{endpoint}</span>
+        <span className="ml-auto italic">— select inputs and click Run —</span>
+      </div>
+
+      <section className="mb-6">
+        <div className="text-[10px] font-mono uppercase tracking-widest text-neutral-700 mb-2">Engine Inputs</div>
+        <div className="rounded border border-neutral-800 bg-neutral-900/30 p-3 grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-[11px] font-mono">
+          {["birthData.name", "birthData.date", "birthData.time", "birthData.location", "date", ...(endpoint === "council" ? ["question"] : [])].map((k) => (
+            <Fragment key={k}>
+              <span className="text-neutral-700 whitespace-nowrap">{k}</span>
+              <SkelLine w="60%" />
+            </Fragment>
+          ))}
+        </div>
+      </section>
+
+      {(showExperts || showSingleExpert) && (
+        <section className="mb-6">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-neutral-700 mb-2">
+            {showSingleExpert ? "Expert" : `Experts (${expertCount})`}
+          </div>
+          <div className={showSingleExpert ? "max-w-md" : "grid gap-3"} style={showSingleExpert ? undefined : { gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}>
+            {Array.from({ length: expertCount }).map((_, i) => <SkelExpertCard key={i} />)}
+          </div>
+        </section>
+      )}
+
+      {showOracle && (
+        <section className="mb-6 max-w-2xl">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-neutral-700 mb-2">Oracle</div>
+          <div className="rounded border border-neutral-700 bg-neutral-900/30 overflow-hidden">
+            <div className="px-3 py-2 border-b border-neutral-800 text-xs font-mono text-neutral-700">◈ The Oracle</div>
+            <div className="px-3 py-3 space-y-2">
+              <SkelLine w="80%" />
+              <SkelLine />
+              <SkelLine w="90%" />
+            </div>
+          </div>
+        </section>
+      )}
+
+      {showChart && (
+        <section className="mb-6 max-w-2xl">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-neutral-700 mb-2">Raw Chart Data</div>
+          <div className="space-y-2">
+            {["western", "chinese", "vedic", "numerology", "tarot"].map((t) => (
+              <div key={t} className="border border-neutral-800 rounded px-3 py-2 text-xs font-mono text-neutral-700">{t} ▼</div>
+            ))}
+          </div>
+        </section>
       )}
     </div>
   );
@@ -281,6 +403,15 @@ export default function EngineInspector() {
             {clientMs != null && <span>{clientMs}ms client</span>}
             {serverMs != null && <span>{serverMs}ms server</span>}
             {error && <span className="text-red-500">error</span>}
+            {result !== null && (
+              <div className="ml-auto flex gap-2">
+                <CopyButton value={JSON.stringify(result, null, 2)} label="Copy payload" />
+                <CopyButton
+                  value={`POST /api/${endpoint}\n${inputJson}\n\n--- response ---\n${JSON.stringify(result, null, 2)}`}
+                  label="Copy debug bundle"
+                />
+              </div>
+            )}
           </div>
         )}
 
@@ -377,9 +508,7 @@ export default function EngineInspector() {
         )}
 
         {!result && !error && !isLoading && (
-          <div className="text-neutral-700 text-sm font-mono">
-            Select an endpoint, edit the input JSON, and click Run.
-          </div>
+          <Skeleton endpoint={endpoint} />
         )}
       </div>
     </div>

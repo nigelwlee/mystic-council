@@ -144,3 +144,18 @@ worktrees/              # Git worktrees — git-ignored
 - **The Oracle** — Judge/synthesizer (streams after all experts complete)
 
 Test birth data: Nigel Lee, June 1 1991, 11:44 AM, Manila.
+
+## Engine Inspector (`/engine`)
+
+`localhost:3001/engine` is a **permanent dev/debug tool** — not a throwaway. It's the dashboard for hitting every backend endpoint (`/api/council`, `/api/daily`, `/api/expert/:tid`, `/api/chart`) directly with editable JSON inputs. Treat it as part of the engine product surface and keep it in sync as endpoints evolve.
+
+Required features (must be preserved):
+- Endpoint picker (left) + editable Input JSON textarea + Run button
+- Engine Inputs panel showing exactly what the server received
+- Expert grid with tabs: One-liner, Summary, Analysis, Facts, **Raw** (raw LLM text for debugging parser failures)
+- Oracle card
+- Skeleton placeholders before first Run so the expected shape of each endpoint is visible
+- **Copy payload** + **Copy debug bundle** buttons (paste the bundle into Claude when reporting issues)
+- Raw JSON disclosure at the bottom
+
+Available only in `NODE_ENV=development` (gated via `notFound()` in production).

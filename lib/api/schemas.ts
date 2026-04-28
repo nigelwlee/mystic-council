@@ -39,6 +39,7 @@ export const ExpertReadingSchema = z.object({
   content: ExpertContentSchema,
   durationMs: z.number().optional(),
   error: z.string().optional(),
+  rawText: z.string().optional(),
 });
 
 // ─── Oracle ───────────────────────────────────────────────────────────────────
