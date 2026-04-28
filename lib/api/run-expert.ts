@@ -61,6 +61,13 @@ export async function runSingleExpert(
         oneLiner: structured.oneLiner,
       },
       durationMs: Date.now() - start,
+      usage: result.usage
+        ? {
+            promptTokens: result.usage.promptTokens,
+            completionTokens: result.usage.completionTokens,
+            totalTokens: result.usage.totalTokens,
+          }
+        : undefined,
       rawText: result.text,
       systemPrompt,
       model: expert.model,

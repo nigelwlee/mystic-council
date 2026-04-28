@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, Fragment } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { notFound } from "next/navigation";
+import { estimateCost, formatCost } from "@/lib/api/pricing";
+import { appendRun, listRuns, clearRuns, type RunLog } from "@/lib/engine/run-log";
 
 if (process.env.NODE_ENV !== "development") {
   // Evaluated at build time on server; redirect handled below in component
@@ -73,6 +75,10 @@ function CopyButton({ value, label = "Copy" }: { value: string; label?: string }
   );
 }
 
+function formatTokens(n: number): string {
+  return n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n);
+}
+
 function ExpertCard({ expert }: { expert: Record<string, unknown> }) {
   const [tab, setTab] = useState<Tab>("oneLiner");
   const content = expert.content as Record<string, string> | undefined;
@@ -80,6 +86,8 @@ function ExpertCard({ expert }: { expert: Record<string, unknown> }) {
   const systemPrompt = expert.systemPrompt as string | undefined;
   const userMessage = expert.userMessage as string | undefined;
   const model = expert.model as string | undefined;
+  const usage = expert.usage as { promptTokens: number; completionTokens: number; totalTokens: number } | undefined;
+  const cost = model && usage ? estimateCost(model, usage) : 0;
   const hasError = Boolean(expert.error);
   const tabValue = tab === "raw" || tab === "prompt" ? undefined : content?.[tab];
 
@@ -92,7 +100,12 @@ function ExpertCard({ expert }: { expert: Record<string, unknown> }) {
         <span className="text-lg">{expert.expertEmoji as string}</span>
         <div className="flex-1 min-w-0">
           <div className="text-xs font-mono text-neutral-300 truncate">{expert.expertName as string}</div>
-          <div className="text-[10px] text-neutral-600">{expert.traditionId as string} · {expert.durationMs != null ? `${expert.durationMs}ms` : "—"}</div>
+          <div className="text-[10px] text-neutral-600">
+            {expert.traditionId as string}
+            {expert.durationMs != null && ` · ${expert.durationMs}ms`}
+            {usage && ` · ${formatTokens(usage.totalTokens)}tok`}
+            {cost > 0 && ` · ${formatCost(cost)}`}
+          </div>
         </div>
         {hasError && (
           <span className="text-[10px] bg-red-900/50 text-red-300 px-1.5 py-0.5 rounded">error</span>
@@ -162,14 +175,18 @@ function OracleCard({ oracle }: { oracle: Record<string, unknown> }) {
   const systemPrompt = oracle.systemPrompt as string | undefined;
   const userMessage = oracle.userMessage as string | undefined;
   const model = oracle.model as string | undefined;
+  const usage = oracle.usage as { promptTokens: number; completionTokens: number; totalTokens: number } | undefined;
+  const cost = model && usage ? estimateCost(model, usage) : 0;
   return (
     <div className="rounded border border-neutral-700 bg-neutral-900/50 overflow-hidden">
       <div className="px-3 py-2 border-b border-neutral-800 flex items-center gap-2">
         <span>◈</span>
         <span className="text-xs font-mono text-neutral-400">The Oracle</span>
-        {oracle.durationMs != null && (
-          <span className="ml-auto text-[10px] text-neutral-600">{oracle.durationMs as number}ms</span>
-        )}
+        <div className="ml-auto flex items-center gap-2 text-[10px] text-neutral-600">
+          {oracle.durationMs != null && <span>{oracle.durationMs as number}ms</span>}
+          {usage && <span>{formatTokens(usage.totalTokens)}tok</span>}
+          {cost > 0 && <span>{formatCost(cost)}</span>}
+        </div>
         {(systemPrompt || userMessage) && (
           <button
             onClick={() => setShowPrompt((v) => !v)}
@@ -352,30 +369,32 @@ export default function EngineInspector() {
 
   const [endpoint, setEndpoint] = useState<EndpointId>("council");
   const [inputJson, setInputJson] = useState(() => defaultInput("council"));
-  const [result, setResult] = useState<Record<string, unknown> | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [results, setResults] = useState<Partial<Record<EndpointId, Record<string, unknown>>>>({});
+  const [errors, setErrors] = useState<Partial<Record<EndpointId, string>>>({});
+  const [clientMsMap, setClientMsMap] = useState<Partial<Record<EndpointId, number>>>({});
   const [isLoading, setIsLoading] = useState(false);
-  const [clientMs, setClientMs] = useState<number | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(true);
+  const [runs, setRuns] = useState<RunLog[]>([]);
+
+  useEffect(() => { setRuns(listRuns()); }, []);
 
   const selectEndpoint = (id: EndpointId) => {
     setEndpoint(id);
     setInputJson(defaultInput(id));
-    setResult(null);
-    setError(null);
+    // Preserve per-endpoint results — don't clear
   };
 
   const run = async () => {
     setIsLoading(true);
-    setError(null);
-    setResult(null);
-    setClientMs(null);
+    setErrors((prev) => ({ ...prev, [endpoint]: undefined }));
+    setClientMsMap((prev) => ({ ...prev, [endpoint]: undefined }));
     const t0 = Date.now();
     try {
       let body: unknown;
       try {
         body = JSON.parse(inputJson);
       } catch {
-        setError("Invalid JSON in input");
+        setErrors((prev) => ({ ...prev, [endpoint]: "Invalid JSON in input" }));
         return;
       }
       const res = await fetch(`/api/${endpoint}`, {
@@ -383,19 +402,48 @@ export default function EngineInspector() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
       });
-      setClientMs(Date.now() - t0);
+      const elapsed = Date.now() - t0;
+      setClientMsMap((prev) => ({ ...prev, [endpoint]: elapsed }));
       const data = await res.json() as Record<string, unknown>;
       if (!res.ok) {
-        setError(JSON.stringify(data, null, 2));
+        setErrors((prev) => ({ ...prev, [endpoint]: JSON.stringify(data, null, 2) }));
       } else {
-        setResult(data);
+        setResults((prev) => ({ ...prev, [endpoint]: data }));
+        // Compute run totals for history
+        const experts = Array.isArray(data.experts) ? (data.experts as Record<string, unknown>[]) : [];
+        const oracle = data.oracle as Record<string, unknown> | undefined;
+        const totalTokens = experts.reduce((s, e) => s + (((e.usage as Record<string, number> | undefined)?.totalTokens) ?? 0), 0)
+          + ((oracle?.usage as Record<string, number> | undefined)?.totalTokens ?? 0);
+        const totalCost = experts.reduce((s, e) => {
+          const u = e.usage as { promptTokens: number; completionTokens: number } | undefined;
+          const m = e.model as string | undefined;
+          return s + (u && m ? estimateCost(m, u) : 0);
+        }, 0) + (() => {
+          const u = oracle?.usage as { promptTokens: number; completionTokens: number } | undefined;
+          const m = oracle?.model as string | undefined;
+          return u && m ? estimateCost(m, u) : 0;
+        })();
+        const log: RunLog = {
+          id: crypto.randomUUID(),
+          ts: Date.now(),
+          endpoint,
+          input: body as Record<string, unknown>,
+          result: data,
+          totals: { durationMs: data.totalDurationMs as number | undefined, tokens: totalTokens, cost: totalCost },
+        };
+        appendRun(log);
+        setRuns(listRuns());
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setErrors((prev) => ({ ...prev, [endpoint]: e instanceof Error ? e.message : String(e) }));
     } finally {
       setIsLoading(false);
     }
   };
+
+  const result = results[endpoint] ?? null;
+  const error = errors[endpoint] ?? null;
+  const clientMs = clientMsMap[endpoint] ?? null;
 
   const res = result;
   const experts = Array.isArray(res?.experts) ? (res!.experts as Record<string, unknown>[]) : null;
@@ -403,6 +451,22 @@ export default function EngineInspector() {
   const traditions = res?.traditions as Record<string, unknown> | undefined;
   const singleExpert = res?.expert as Record<string, unknown> | undefined;
   const serverMs = res?.totalDurationMs as number | undefined;
+
+  const totalTokens = result
+    ? (experts ?? []).reduce((s, e) => s + (((e.usage as Record<string, number> | undefined)?.totalTokens) ?? 0), 0)
+        + ((oracle?.usage as Record<string, number> | undefined)?.totalTokens ?? 0)
+    : 0;
+  const totalCost = result
+    ? (experts ?? []).reduce((s, e) => {
+        const u = e.usage as { promptTokens: number; completionTokens: number } | undefined;
+        const m = e.model as string | undefined;
+        return s + (u && m ? estimateCost(m, u) : 0);
+      }, 0) + (() => {
+        const u = oracle?.usage as { promptTokens: number; completionTokens: number } | undefined;
+        const m = oracle?.model as string | undefined;
+        return u && m ? estimateCost(m, u) : 0;
+      })()
+    : 0;
 
   return (
     <div className="h-[100dvh] grid grid-cols-[280px_1fr] bg-neutral-950 text-neutral-100 overflow-hidden">
@@ -426,6 +490,58 @@ export default function EngineInspector() {
               </button>
             ))}
           </div>
+        </div>
+
+        {/* History panel */}
+        <div className="border-b border-neutral-800">
+          <button
+            onClick={() => setHistoryOpen((v) => !v)}
+            className="w-full flex items-center justify-between px-4 py-2 text-[10px] font-mono uppercase tracking-widest text-neutral-600 hover:text-neutral-400"
+          >
+            <span>History ({runs.length})</span>
+            <span>{historyOpen ? "▲" : "▼"}</span>
+          </button>
+          {historyOpen && (
+            <div className="px-4 pb-3 max-h-48 overflow-y-auto">
+              {runs.length === 0 ? (
+                <div className="text-[10px] font-mono text-neutral-700 italic">no runs yet</div>
+              ) : (
+                <>
+                  <button
+                    onClick={() => { clearRuns(); setRuns([]); }}
+                    className="text-[10px] font-mono text-neutral-700 hover:text-red-400 mb-2 block"
+                  >
+                    clear all
+                  </button>
+                  <div className="space-y-1">
+                    {runs.map((r) => (
+                      <button
+                        key={r.id}
+                        onClick={() => {
+                          const ep = r.endpoint as EndpointId;
+                          setEndpoint(ep);
+                          setInputJson(JSON.stringify(r.input, null, 2));
+                          setResults((prev) => ({ ...prev, [ep]: r.result }));
+                        }}
+                        className="w-full text-left px-2 py-1.5 rounded hover:bg-neutral-900 transition-colors group"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[9px] font-mono text-neutral-500 bg-neutral-800 px-1 rounded">{r.endpoint}</span>
+                          <span className="text-[10px] text-neutral-600 group-hover:text-neutral-400">
+                            {r.totals.tokens > 0 ? `${r.totals.tokens.toLocaleString()}tok` : ""}
+                            {r.totals.cost > 0 ? ` · ${formatCost(r.totals.cost)}` : ""}
+                          </span>
+                        </div>
+                        <div className="text-[9px] font-mono text-neutral-700 mt-0.5">
+                          {new Date(r.ts).toLocaleTimeString()}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex-1 px-4 py-3 flex flex-col min-h-0">
@@ -457,6 +573,8 @@ export default function EngineInspector() {
             <span className="uppercase tracking-widest">POST /api/{endpoint}</span>
             {clientMs != null && <span>{clientMs}ms client</span>}
             {serverMs != null && <span>{serverMs}ms server</span>}
+            {totalTokens > 0 && <span className="text-neutral-500">{totalTokens.toLocaleString()} tok</span>}
+            {totalCost > 0 && <span className="text-neutral-500">{formatCost(totalCost)}</span>}
             {error && <span className="text-red-500">error</span>}
             {result !== null && (
               <div className="ml-auto flex gap-2">

@@ -110,6 +110,13 @@ export async function POST(req: Request) {
       summary: obj.summary,
       oneLiner: obj.oneLiner,
       durationMs: Date.now() - judgeStart,
+      usage: judgeResult.usage
+        ? {
+            promptTokens: judgeResult.usage.promptTokens,
+            completionTokens: judgeResult.usage.completionTokens,
+            totalTokens: judgeResult.usage.totalTokens,
+          }
+        : undefined,
       systemPrompt: judgeSystemPrompt,
       model: judgeConfig.model,
       userMessage: question,

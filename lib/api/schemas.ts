@@ -29,6 +29,12 @@ export const ExpertContentSchema = z.object({
   oneLiner: z.string(),
 });
 
+export const TokenUsageSchema = z.object({
+  promptTokens: z.number(),
+  completionTokens: z.number(),
+  totalTokens: z.number(),
+});
+
 export const ExpertReadingSchema = z.object({
   traditionId: z.enum(["western", "chinese", "vedic", "tarot", "numerology"]),
   expertId: z.string(),
@@ -38,6 +44,7 @@ export const ExpertReadingSchema = z.object({
   textColor: z.string(),
   content: ExpertContentSchema,
   durationMs: z.number().optional(),
+  usage: TokenUsageSchema.optional(),
   error: z.string().optional(),
   rawText: z.string().optional(),
   systemPrompt: z.string().optional(),
@@ -51,6 +58,7 @@ export const OracleSchema = z.object({
   summary: z.string(),
   oneLiner: z.string(),
   durationMs: z.number().optional(),
+  usage: TokenUsageSchema.optional(),
   systemPrompt: z.string().optional(),
   model: z.string().optional(),
   userMessage: z.string().optional(),
@@ -100,6 +108,7 @@ export const ChartDataSchema = z.object({
 
 // ─── Inferred types ───────────────────────────────────────────────────────────
 
+export type TokenUsage = z.infer<typeof TokenUsageSchema>;
 export type BirthData = z.infer<typeof BirthDataSchema>;
 export type ContextInput = z.infer<typeof ContextInputSchema>;
 export type QuestionInput = z.infer<typeof QuestionInputSchema>;
