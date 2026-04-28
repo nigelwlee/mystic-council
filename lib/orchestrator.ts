@@ -37,7 +37,7 @@ async function generateWithRetry(
   throw lastError;
 }
 
-function formatBirthData(birthData: BirthData | null): string {
+export function formatBirthData(birthData: BirthData | null): string {
   if (!birthData || (!birthData.date && !birthData.name)) {
     return "No birth data provided.";
   }
@@ -52,7 +52,7 @@ function formatBirthData(birthData: BirthData | null): string {
 // Wraps every tool in a set to:
 // 1. Make all parameters optional (so model sending {} still passes Zod validation)
 // 2. Inject known birth data for any missing birth-data fields before calling execute
-function patchToolsWithBirthData(
+export function patchToolsWithBirthData(
   tools: Record<string, CoreTool<z.ZodTypeAny, unknown>>,
   birthData: BirthData | null
 ): Record<string, CoreTool<z.ZodTypeAny, unknown>> {
@@ -88,7 +88,7 @@ function patchToolsWithBirthData(
   return patched;
 }
 
-function parseStructuredExpert(text: string): StructuredExpertContent {
+export function parseStructuredExpert(text: string): StructuredExpertContent {
   // Try direct JSON parse
   try {
     const parsed = JSON.parse(text) as Record<string, unknown>;
@@ -126,7 +126,7 @@ function parseStructuredExpert(text: string): StructuredExpertContent {
   return { facts: "", analysis: "", summary: text, oneLiner: text };
 }
 
-function parseJudgeOutput(text: string): { summary: string; oneLiner: string } {
+export function parseJudgeOutput(text: string): { summary: string; oneLiner: string } {
   // Try direct JSON parse
   try {
     const parsed = JSON.parse(text) as Record<string, unknown>;
