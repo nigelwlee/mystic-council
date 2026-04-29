@@ -1,18 +1,17 @@
 import { generateText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
+import { parseJudgeOutput } from "@/lib/orchestrator";
 import { experts } from "@/lib/experts/registry";
 import { judgeConfig } from "@/lib/experts/judge";
-import { loadKnowledge } from "@/lib/knowledge/loader";
-import {
-  formatBirthData,
-  patchToolsWithBirthData,
-  parseStructuredExpert,
-  parseJudgeOutput,
-} from "@/lib/orchestrator";
+import { runSingleExpert } from "@/lib/api/run-expert";
+import { mockExpertResponses, mockJudgeVerdict } from "@/lib/mock-data";
 import { MOCK_DAILY_READING } from "@/lib/mock-daily";
 import { EXPERT_ID_TO_TRADITION } from "@/lib/constants/traditions";
-import type { BirthData } from "@/lib/experts/types";
-import type { DailyReading } from "@/lib/types/daily";
+import { ContextInputSchema } from "@/lib/api/schemas";
+import { chartContextForTradition } from "@/lib/api/chart-context";
+import { VOICE_RULES } from "@/lib/voice";
+import { FORMAT_RULES } from "@/lib/format";
+import type { DailyReadingResponse, ExpertReading } from "@/lib/api/schemas";
 
 export const maxDuration = 60;
 
@@ -20,106 +19,140 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-const DAILY_OUTPUT_RULES = `\n\nOUTPUT FORMAT — RESPOND WITH VALID JSON ONLY:
-{
-  "facts": "Key data points from your tradition for today (positions, cards, numbers).",
-  "analysis": "What these mean for this person today. 2-3 sentences.",
-  "summary": "One focused sentence capturing the essence of today.",
-  "oneLiner": "The single most important insight for today."
-}`;
+const openrouter = createOpenAI({
+  apiKey: process.env.OPENROUTER_API_KEY,
+  baseURL: "https://openrouter.ai/api/v1",
+});
 
 export async function POST(req: Request) {
-  const { birthData, date } = (await req.json()) as {
-    birthData: BirthData | null;
-    date: string;
-  };
+  const body = await req.json();
+  const parsed = ContextInputSchema.safeParse(body);
+  if (!parsed.success) {
+    return Response.json({ error: parsed.error.flatten() }, { status: 400 });
+  }
+
+  const { birthData, date, chart } = parsed.data;
+  const start = Date.now();
 
   if (process.env.MOCK_MODE === "true") {
     await sleep(300 + Math.random() * 500);
-    const reading: DailyReading = {
-      ...MOCK_DAILY_READING,
+    // Build a rich mock response from the existing mock data
+    const expertReadings: ExpertReading[] = mockExpertResponses.map((r) => {
+      const tid = EXPERT_ID_TO_TRADITION[r.expertId];
+      return {
+        traditionId: (tid ?? "western") as ExpertReading["traditionId"],
+        expertId: r.expertId,
+        expertName: r.expertName,
+        expertEmoji: r.expertEmoji,
+        color: r.color,
+        textColor: r.textColor,
+        content: typeof r.content === "string"
+          ? { facts: "", analysis: "", summary: r.content, oneLiner: r.content }
+          : r.content,
+        durationMs: 400 + Math.floor(Math.random() * 300),
+      };
+    });
+    // Cross-check against MOCK_DAILY_READING for oneLiners (daily highlights)
+    for (const h of MOCK_DAILY_READING.expertHighlights) {
+      const er = expertReadings.find((r) => r.traditionId === h.traditionId);
+      if (er) er.content = { ...er.content, oneLiner: h.highlight };
+    }
+    const reading: DailyReadingResponse = {
       id: crypto.randomUUID(),
       generatedAt: new Date().toISOString(),
+      input: { birthData, date },
+      experts: expertReadings,
+      oracle: {
+        summary: mockJudgeVerdict.summary,
+        oneLiner: MOCK_DAILY_READING.oracleSummary,
+        durationMs: 300,
+      },
+      totalDurationMs: Date.now() - start,
     };
     return Response.json(reading);
   }
 
-  const openrouter = createOpenAI({
-    apiKey: process.env.OPENROUTER_API_KEY,
-    baseURL: "https://openrouter.ai/api/v1",
-  });
-
-  const birthDataStr = formatBirthData(birthData);
   const dailyMessage = `Give me my daily reading for ${date}. What do the stars, cards, and numbers say about today?`;
 
+  const settled = await Promise.allSettled(
+    experts.map((e) => {
+      const tid = EXPERT_ID_TO_TRADITION[e.id];
+      const ctx = tid ? chartContextForTradition(chart, tid) : null;
+      return runSingleExpert(e, dailyMessage, birthData, ctx);
+    })
+  );
+
+  const expertReadings: ExpertReading[] = settled.map((r, i) => {
+    if (r.status === "fulfilled") return r.value;
+    const e = experts[i]!;
+    const tid = EXPERT_ID_TO_TRADITION[e.id];
+    return {
+      traditionId: (tid ?? "western") as ExpertReading["traditionId"],
+      expertId: e.id,
+      expertName: e.name,
+      expertEmoji: e.emoji,
+      color: e.color,
+      textColor: e.textColor,
+      content: { facts: "", analysis: "", summary: "", oneLiner: "" },
+      error: r.reason instanceof Error ? r.reason.message : String(r.reason),
+    };
+  });
+
+  const successful = expertReadings.filter((r) => !r.error);
+  if (successful.length === 0) {
+    return Response.json({ error: "All experts failed" }, { status: 502 });
+  }
+
+  const expertOutputs = successful
+    .map((r) => `### ${r.expertName}\n${r.content.summary}`)
+    .join("\n\n---\n\n");
+
+  const judgeSystemPrompt = judgeConfig.systemPromptTemplate.replace("{expertOutputs}", expertOutputs) + "\n\n" + VOICE_RULES + "\n\n" + FORMAT_RULES;
+  const judgeStart = Date.now();
+
+  const judgeUserMessage = `Synthesize a daily reading for ${date} in 2-3 sentences.`;
+  let oracle: DailyReadingResponse["oracle"];
   try {
-    // Run all 5 experts in parallel — partial failures are tolerated
-    const settled = await Promise.allSettled(
-      experts.map(async (expert) => {
-        const knowledge = await loadKnowledge(expert.knowledgePath);
-        const systemPrompt =
-          expert.systemPromptTemplate
-            .replace("{knowledge}", knowledge)
-            .replace("{birthData}", birthDataStr) + DAILY_OUTPUT_RULES;
-
-        const result = await generateText({
-          model: openrouter(expert.model),
-          system: systemPrompt,
-          messages: [{ role: "user", content: dailyMessage }],
-          tools: patchToolsWithBirthData(expert.tools, birthData),
-          maxSteps: 2,
-        });
-
-        return { expertId: expert.id, content: parseStructuredExpert(result.text) };
-      })
-    );
-
-    const expertHighlights: DailyReading["expertHighlights"] = [];
-    const expertSummaries: string[] = [];
-
-    for (const result of settled) {
-      if (result.status !== "fulfilled") continue;
-      const { expertId, content } = result.value;
-      const traditionId = EXPERT_ID_TO_TRADITION[expertId];
-      if (!traditionId || typeof content === "string") continue;
-      expertHighlights.push({ traditionId, highlight: content.oneLiner });
-      expertSummaries.push(
-        `### ${expertId}\n${content.summary}`
-      );
-    }
-
-    if (expertHighlights.length === 0) {
-      return Response.json({ error: "All experts failed" }, { status: 502 });
-    }
-
-    const judgeSystemPrompt = judgeConfig.systemPromptTemplate.replace(
-      "{expertOutputs}",
-      expertSummaries.join("\n\n---\n\n")
-    );
-
     const judgeResult = await generateText({
       model: openrouter(judgeConfig.model),
       system: judgeSystemPrompt,
-      messages: [
-        {
-          role: "user",
-          content: `Synthesize a daily reading for ${date} in 2-3 sentences.`,
-        },
-      ],
+      messages: [{ role: "user", content: judgeUserMessage }],
     });
-
-    const judgeOutput = parseJudgeOutput(judgeResult.text);
-
-    const reading: DailyReading = {
-      id: crypto.randomUUID(),
-      oracleSummary: judgeOutput.summary,
-      expertHighlights,
-      generatedAt: new Date().toISOString(),
+    const parsed = parseJudgeOutput(judgeResult.text);
+    oracle = {
+      summary: parsed.summary,
+      oneLiner: parsed.oneLiner,
+      durationMs: Date.now() - judgeStart,
+      usage: judgeResult.usage
+        ? {
+            promptTokens: judgeResult.usage.promptTokens,
+            completionTokens: judgeResult.usage.completionTokens,
+            totalTokens: judgeResult.usage.totalTokens,
+          }
+        : undefined,
+      systemPrompt: judgeSystemPrompt,
+      model: judgeConfig.model,
+      userMessage: judgeUserMessage,
     };
-
-    return Response.json(reading);
   } catch (err) {
-    console.error("Daily reading error:", err);
-    return Response.json({ error: "Failed to generate daily reading" }, { status: 500 });
+    oracle = {
+      summary: "The oracle was unable to synthesize today's reading.",
+      oneLiner: err instanceof Error ? err.message : String(err),
+      durationMs: Date.now() - judgeStart,
+      systemPrompt: judgeSystemPrompt,
+      model: judgeConfig.model,
+      userMessage: judgeUserMessage,
+    };
   }
+
+  const reading: DailyReadingResponse = {
+    id: crypto.randomUUID(),
+    generatedAt: new Date().toISOString(),
+    input: { birthData, date },
+    experts: expertReadings,
+    oracle,
+    totalDurationMs: Date.now() - start,
+  };
+
+  return Response.json(reading);
 }

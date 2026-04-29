@@ -17,7 +17,7 @@ function longitudeToSign(lon: number): { sign: string; degree: number } {
   const normalized = ((lon % 360) + 360) % 360;
   const index = Math.floor(normalized / 30);
   const degree = Math.round((normalized % 30) * 10) / 10;
-  return { sign: SIGNS[index], degree };
+  return { sign: SIGNS[index]!, degree };
 }
 
 function getAspects(positions: Record<string, number>) {
@@ -34,19 +34,14 @@ function getAspects(positions: Record<string, number>) {
 
   for (let i = 0; i < planets.length; i++) {
     for (let j = i + 1; j < planets.length; j++) {
-      const p1 = positions[planets[i]] ?? 0;
-      const p2 = positions[planets[j]] ?? 0;
+      const p1 = positions[planets[i]!] ?? 0;
+      const p2 = positions[planets[j]!] ?? 0;
       const diff = Math.abs(p1 - p2);
       const angle = diff > 180 ? 360 - diff : diff;
       for (const def of aspectDefs) {
         const orb = Math.abs(angle - def.angle);
         if (orb <= def.orb) {
-          aspects.push({
-            planet1: planets[i],
-            planet2: planets[j],
-            aspect: def.name,
-            orb: Math.round(orb * 10) / 10,
-          });
+          aspects.push({ planet1: planets[i]!, planet2: planets[j]!, aspect: def.name, orb: Math.round(orb * 10) / 10 });
         }
       }
     }
@@ -54,19 +49,68 @@ function getAspects(positions: Record<string, number>) {
   return aspects;
 }
 
+function degToRad(d: number): number { return d * Math.PI / 180; }
+function radToDeg(r: number): number { return r * 180 / Math.PI; }
+
+function computeAngles(year: number, month: number, day: number, hour: number, minute: number, lat: number, lon: number) {
+  // Julian Day Number
+  const JD = 367 * year
+    - Math.floor(7 * (year + Math.floor((month + 9) / 12)) / 4)
+    + Math.floor(275 * month / 9) + day + 1721013.5
+    + (hour + minute / 60) / 24;
+
+  const T = (JD - 2451545.0) / 36525.0;
+
+  // Greenwich Mean Sidereal Time (degrees)
+  const GMST = ((280.46061837
+    + 360.98564736629 * (JD - 2451545.0)
+    + 0.000387933 * T * T
+    - T * T * T / 38710000) % 360 + 360) % 360;
+
+  // Local Sidereal Time
+  const LST = ((GMST + lon) % 360 + 360) % 360;
+
+  // Obliquity of ecliptic
+  const E = 23.4397 - 0.0000004 * (JD - 2451545.0);
+
+  const latR = degToRad(lat);
+  const lstR = degToRad(LST);
+  const eR = degToRad(E);
+
+  // Ascendant ecliptic longitude
+  const y = Math.cos(lstR);
+  const x = -Math.sin(lstR) * Math.cos(eR) - Math.tan(latR) * Math.sin(eR);
+  const ascDeg = ((radToDeg(Math.atan2(y, x)) % 360) + 360) % 360;
+
+  // Midheaven ecliptic longitude
+  const mcRaw = radToDeg(Math.atan2(Math.sin(lstR), Math.cos(lstR) * Math.cos(eR)));
+  const mcDeg = ((mcRaw % 360) + 360) % 360;
+
+  return {
+    ascendant: { ...longitudeToSign(ascDeg), longitude: Math.round(ascDeg * 100) / 100 },
+    mc: { ...longitudeToSign(mcDeg), longitude: Math.round(mcDeg * 100) / 100 },
+    descendant: { ...longitudeToSign((ascDeg + 180) % 360), longitude: Math.round((ascDeg + 180) % 360 * 100) / 100 },
+    ic: { ...longitudeToSign((mcDeg + 180) % 360), longitude: Math.round((mcDeg + 180) % 360 * 100) / 100 },
+  };
+}
+
 const birthChartSchema = z.object({
   date: z.string().describe("Birth date in YYYY-MM-DD format"),
   time: z.string().optional().describe("Birth time in HH:mm format (24h). Leave empty if unknown."),
+  latitude: z.number().optional().describe("Birth location latitude (for house angles)"),
+  longitude: z.number().optional().describe("Birth location longitude (for house angles)"),
 });
 
-const transitsSchema = z.object({});
+const transitsForDateSchema = z.object({
+  date: z.string().describe("Date in YYYY-MM-DD format to compute transiting positions"),
+});
 
 export const westernAstrologyTools = {
   calculateBirthChart: tool({
     description:
       "Calculate planetary positions (sign + degree) for a given birth date and time. Use this whenever birth data is available.",
     parameters: birthChartSchema,
-    execute: async ({ date, time }: z.infer<typeof birthChartSchema>) => {
+    execute: async ({ date, time, latitude, longitude }: z.infer<typeof birthChartSchema>) => {
       const [year, month, day] = date.split("-").map(Number);
       const [hour, minute] = time ? time.split(":").map(Number) : [12, 0];
       const dateObj = new Date(Date.UTC(year!, month! - 1, day!, hour, minute));
@@ -87,33 +131,42 @@ export const westernAstrologyTools = {
       );
       const aspects = getAspects(longitudes);
 
+      const angles = (latitude !== undefined && longitude !== undefined && time)
+        ? computeAngles(year!, month!, day!, hour!, minute!, latitude, longitude)
+        : null;
+
       return {
         planets: chart,
         aspects: aspects.slice(0, 15),
+        angles,
         sunSign: chart["Sun"]?.sign,
         moonSign: chart["Moon"]?.sign,
+        ascendant: angles?.ascendant.sign ?? null,
         note: time
-          ? "Chart calculated with birth time."
-          : "Birth time unknown — rising sign not calculated.",
+          ? (angles ? "Chart calculated with birth time and location — angles accurate." : "Chart calculated with birth time.")
+          : "Birth time unknown — angles and rising sign not calculated.",
       };
     },
   }),
 
-  getCurrentTransits: tool({
-    description: "Calculate current planetary positions (transits) for today.",
-    parameters: transitsSchema,
-    execute: async () => {
-      const now = new Date();
-      const transits: Record<string, { sign: string; degree: number }> = {};
-      for (const body of [Body.Sun, Body.Moon, Body.Mercury, Body.Venus, Body.Mars, Body.Jupiter, Body.Saturn]) {
+  calculateTransitsForDate: tool({
+    description: "Calculate current transiting planetary positions for a specific date. Use this to find how today's sky compares to the natal chart.",
+    parameters: transitsForDateSchema,
+    execute: async ({ date }: z.infer<typeof transitsForDateSchema>) => {
+      const [year, month, day] = date.split("-").map(Number);
+      const dateObj = new Date(Date.UTC(year!, month! - 1, day!, 12, 0));
+      const transitBodies = [Body.Sun, Body.Moon, Body.Mercury, Body.Venus, Body.Mars, Body.Jupiter, Body.Saturn];
+      const transits: Record<string, { sign: string; degree: number; longitude: number }> = {};
+      for (const body of transitBodies) {
         try {
-          const lon = EclipticLongitude(body, now);
-          transits[String(body)] = longitudeToSign(lon);
+          const lon = EclipticLongitude(body, dateObj);
+          const { sign, degree } = longitudeToSign(lon);
+          transits[String(body)] = { sign, degree, longitude: Math.round(lon * 100) / 100 };
         } catch {
           // skip
         }
       }
-      return { transits, date: now.toISOString().split("T")[0] };
+      return { date, transits };
     },
   }),
 };

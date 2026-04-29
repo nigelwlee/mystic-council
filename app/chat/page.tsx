@@ -43,9 +43,12 @@ export default function ChatPage() {
   // LoomBar weft thread state
   const [weftThreads, setWeftThreads] = useState<WeftThread[]>([]);
 
+  // Reading date — defaults to today, user can override for past/future readings
+  const [readingDate, setReadingDate] = useState(() => new Date().toLocaleDateString("en-CA"));
+
   const { messages, setMessages, isLoading, data, append } = useChat({
     api: "/api/chat",
-    body: { birthData, selectedExperts: [] },
+    body: { birthData, selectedExperts: [], date: readingDate },
   });
 
   // Parse stream data events
@@ -267,6 +270,39 @@ export default function ChatPage() {
                       padding: "4px 0 12px",
                       boxSizing: "border-box",
                       caretColor: TEXT,
+                    }}
+                  />
+                </div>
+
+                {/* Reading date */}
+                <div style={{ marginTop: 16, marginBottom: 4, display: "flex", alignItems: "center", gap: 10 }}>
+                  <span
+                    style={{
+                      fontFamily: "var(--font-geist-sans)",
+                      fontSize: 9,
+                      letterSpacing: "0.14em",
+                      textTransform: "uppercase",
+                      color: TEXT,
+                      opacity: 0.3,
+                    }}
+                  >
+                    Reading date
+                  </span>
+                  <input
+                    type="date"
+                    value={readingDate}
+                    onChange={(e) => setReadingDate(e.target.value)}
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      borderBottom: "1px solid rgba(245,240,232,0.12)",
+                      outline: "none",
+                      color: TEXT,
+                      fontFamily: "var(--font-geist-mono)",
+                      fontSize: 11,
+                      opacity: 0.45,
+                      padding: "2px 0",
+                      colorScheme: "dark",
                     }}
                   />
                 </div>
