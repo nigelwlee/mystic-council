@@ -1,11 +1,43 @@
-import { generateObject } from "ai";
-import { z } from "zod";
+import { generateText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
+import { parseJudgeOutput } from "@/lib/orchestrator";
 import { experts } from "@/lib/experts/registry";
 import { judgeConfig } from "@/lib/experts/judge";
 import { runSingleExpert } from "@/lib/api/run-expert";
 import { EXPERT_ID_TO_TRADITION } from "@/lib/constants/traditions";
 import { QuestionInputSchema } from "@/lib/api/schemas";
+import { chartContextForTradition, dailyPriorFrame } from "@/lib/api/chart-context";
+import { VOICE_RULES } from "@/lib/voice";
+import { FORMAT_RULES } from "@/lib/format";
+import { tarotTools } from "@/lib/tools/tarot";
+
+// Seeded PRNG — same question on same day always draws the same cards
+function seededRng(seed: string): () => number {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) {
+    h = Math.imul(h ^ seed.charCodeAt(i), 16777619);
+  }
+  let state = h >>> 0;
+  return () => {
+    state += 0x6d2b79f5;
+    let z = state;
+    z = Math.imul(z ^ (z >>> 15), z | 1);
+    z ^= z + Math.imul(z ^ (z >>> 7), z | 61);
+    return ((z ^ (z >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+async function drawQuestionCards(date: string, question: string) {
+  const seed = `${date}:${question}`;
+  const rng = seededRng(seed);
+  const original = Math.random;
+  Math.random = rng;
+  try {
+    return await tarotTools.drawCards.execute!({ spread: "three-card", question }, {} as never);
+  } finally {
+    Math.random = original;
+  }
+}
 
 export const maxDuration = 90;
 
@@ -20,8 +52,11 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return Response.json({ error: parsed.error.flatten() }, { status: 400 });
   }
-  const { birthData, date, question } = parsed.data;
+  const { birthData, date, question, chart, dailyReading } = parsed.data;
   const userMessage = `${question}\n\nToday's date: ${date}`;
+
+  // Pre-draw question-seeded tarot cards for Madame Crow
+  const questionCards = await drawQuestionCards(date, question);
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
@@ -37,7 +72,14 @@ export async function POST(req: Request) {
       const expertPromises = experts.map(async (expert) => {
         emit({ type: "expert-start", expertId: expert.id, expertName: expert.name, expertEmoji: expert.emoji, color: expert.color, textColor: expert.textColor });
         try {
-          const result = await runSingleExpert(expert, userMessage, birthData);
+          const tid = EXPERT_ID_TO_TRADITION[expert.id];
+          let ctx = tid ? chartContextForTradition(chart, tid) : null;
+          // Inject question-specific seeded cards for Madame Crow
+          if (expert.id === "madame-crow") {
+            const cardCtx = `Pre-drawn tarot cards for this specific question (use these directly — do not call drawCards):\n\`\`\`json\n${JSON.stringify(questionCards, null, 2)}\n\`\`\`\n\n`;
+            ctx = (ctx ?? "") + cardCtx;
+          }
+          const result = await runSingleExpert(expert, userMessage, birthData, ctx);
           emit({ type: "expert-complete", ...result });
           return result;
         } catch (err) {
@@ -66,24 +108,24 @@ export async function POST(req: Request) {
         const expertOutputs = successful
           .map((r) => `### ${r.expertName}\n${r.content.analysis}`)
           .join("\n\n---\n\n");
-        const judgeSystemPrompt = judgeConfig.systemPromptTemplate.replace("{expertOutputs}", expertOutputs);
+        const priorFrame = dailyPriorFrame(dailyReading);
+        const judgeSystemPrompt =
+          judgeConfig.systemPromptTemplate.replace("{expertOutputs}", expertOutputs) +
+          (priorFrame ?? "") +
+          "\n\n" + VOICE_RULES +
+          "\n\n" + FORMAT_RULES;
         emit({ type: "oracle-start" });
         const judgeStart = Date.now();
-        const judgeSchema = z.object({
-          summary: z.string().describe("3-5 sentence synthesized reading"),
-          oneLiner: z.string().describe("One sentence: the unified insight"),
-        });
         try {
-          const judgeResult = await generateObject({
+          const judgeResult = await generateText({
             model: openrouter(judgeConfig.model),
             system: judgeSystemPrompt,
             messages: [{ role: "user", content: question }],
-            schema: judgeSchema,
           });
-          const obj = judgeResult.object as z.infer<typeof judgeSchema>;
+          const parsed = parseJudgeOutput(judgeResult.text);
           oracle = {
-            summary: obj.summary,
-            oneLiner: obj.oneLiner,
+            summary: parsed.summary,
+            oneLiner: parsed.oneLiner,
             durationMs: Date.now() - judgeStart,
             usage: judgeResult.usage
               ? {
@@ -98,7 +140,15 @@ export async function POST(req: Request) {
           };
           emit({ type: "oracle-complete", oracle });
         } catch (err) {
-          emit({ type: "oracle-error", error: err instanceof Error ? err.message : String(err) });
+          oracle = {
+            summary: "The council was unable to synthesize a verdict.",
+            oneLiner: err instanceof Error ? err.message : String(err),
+            durationMs: Date.now() - judgeStart,
+            systemPrompt: judgeSystemPrompt,
+            model: judgeConfig.model,
+            userMessage: question,
+          };
+          emit({ type: "oracle-complete", oracle });
         }
       }
 

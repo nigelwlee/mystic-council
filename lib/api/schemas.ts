@@ -11,14 +11,35 @@ export const BirthDataSchema = z.object({
   location: z.string().optional(),
 });
 
+// Forward-declared loosely-typed shapes for prerequisite passthrough.
+// We avoid full reuse of ChartDataSchema / DailyReadingResponseSchema here
+// to prevent circular references (those schemas reference ContextInputSchema below).
+const ChartPassthroughSchema = z.object({
+  id: z.string(),
+  generatedAt: z.string(),
+  traditions: z.record(z.string(), z.unknown()),
+}).passthrough();
+
+const DailyReadingPassthroughSchema = z.object({
+  id: z.string(),
+  generatedAt: z.string(),
+  experts: z.array(z.unknown()),
+  oracle: z.object({
+    summary: z.string(),
+    oneLiner: z.string(),
+  }).passthrough(),
+}).passthrough();
+
 export const ContextInputSchema = z.object({
   birthData: BirthDataSchema.nullable().default(null),
   date: z.string().default(() => new Date().toLocaleDateString("en-CA")),
+  chart: ChartPassthroughSchema.optional(),
 });
 
 export const QuestionInputSchema = ContextInputSchema.extend({
   question: z.string().min(1, "question is required"),
   dailyDigest: z.boolean().optional(),
+  dailyReading: DailyReadingPassthroughSchema.optional(),
 });
 
 // ─── Expert output ────────────────────────────────────────────────────────────

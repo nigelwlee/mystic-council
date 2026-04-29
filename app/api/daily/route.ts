@@ -1,6 +1,6 @@
-import { generateObject } from "ai";
-import { z } from "zod";
+import { generateText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
+import { parseJudgeOutput } from "@/lib/orchestrator";
 import { experts } from "@/lib/experts/registry";
 import { judgeConfig } from "@/lib/experts/judge";
 import { runSingleExpert } from "@/lib/api/run-expert";
@@ -8,6 +8,9 @@ import { mockExpertResponses, mockJudgeVerdict } from "@/lib/mock-data";
 import { MOCK_DAILY_READING } from "@/lib/mock-daily";
 import { EXPERT_ID_TO_TRADITION } from "@/lib/constants/traditions";
 import { ContextInputSchema } from "@/lib/api/schemas";
+import { chartContextForTradition } from "@/lib/api/chart-context";
+import { VOICE_RULES } from "@/lib/voice";
+import { FORMAT_RULES } from "@/lib/format";
 import type { DailyReadingResponse, ExpertReading } from "@/lib/api/schemas";
 
 export const maxDuration = 60;
@@ -28,7 +31,7 @@ export async function POST(req: Request) {
     return Response.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { birthData, date } = parsed.data;
+  const { birthData, date, chart } = parsed.data;
   const start = Date.now();
 
   if (process.env.MOCK_MODE === "true") {
@@ -72,7 +75,11 @@ export async function POST(req: Request) {
   const dailyMessage = `Give me my daily reading for ${date}. What do the stars, cards, and numbers say about today?`;
 
   const settled = await Promise.allSettled(
-    experts.map((e) => runSingleExpert(e, dailyMessage, birthData))
+    experts.map((e) => {
+      const tid = EXPERT_ID_TO_TRADITION[e.id];
+      const ctx = tid ? chartContextForTradition(chart, tid) : null;
+      return runSingleExpert(e, dailyMessage, birthData, ctx);
+    })
   );
 
   const expertReadings: ExpertReading[] = settled.map((r, i) => {
@@ -100,27 +107,21 @@ export async function POST(req: Request) {
     .map((r) => `### ${r.expertName}\n${r.content.summary}`)
     .join("\n\n---\n\n");
 
-  const judgeSystemPrompt = judgeConfig.systemPromptTemplate.replace("{expertOutputs}", expertOutputs);
+  const judgeSystemPrompt = judgeConfig.systemPromptTemplate.replace("{expertOutputs}", expertOutputs) + "\n\n" + VOICE_RULES + "\n\n" + FORMAT_RULES;
   const judgeStart = Date.now();
-
-  const judgeSchema = z.object({
-    summary: z.string().describe("2-3 sentence synthesized daily reading across all traditions"),
-    oneLiner: z.string().describe("One sentence: the unified daily insight"),
-  });
 
   const judgeUserMessage = `Synthesize a daily reading for ${date} in 2-3 sentences.`;
   let oracle: DailyReadingResponse["oracle"];
   try {
-    const judgeResult = await generateObject({
+    const judgeResult = await generateText({
       model: openrouter(judgeConfig.model),
       system: judgeSystemPrompt,
       messages: [{ role: "user", content: judgeUserMessage }],
-      schema: judgeSchema,
     });
-    const obj = judgeResult.object as z.infer<typeof judgeSchema>;
+    const parsed = parseJudgeOutput(judgeResult.text);
     oracle = {
-      summary: obj.summary,
-      oneLiner: obj.oneLiner,
+      summary: parsed.summary,
+      oneLiner: parsed.oneLiner,
       durationMs: Date.now() - judgeStart,
       usage: judgeResult.usage
         ? {

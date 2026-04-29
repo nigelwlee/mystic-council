@@ -25,12 +25,12 @@ function seededRng(seed: string): () => number {
 }
 
 // Temporarily patch Math.random with a seeded version during tarot draw
-async function drawSeededCards(date: string, spread: "three-card") {
-  const rng = seededRng(date);
+async function drawSeededCards(seed: string, spread: "three-card") {
+  const rng = seededRng(seed);
   const original = Math.random;
   Math.random = rng;
   try {
-    return await tarotTools.drawCards.execute!({ spread, question: `Daily reading for ${date}` }, {} as never);
+    return await tarotTools.drawCards.execute!({ spread, question: `Daily reading for ${seed}` }, {} as never);
   } finally {
     Math.random = original;
   }
@@ -47,24 +47,24 @@ export async function POST(req: Request) {
   const bd = birthData ?? {};
   const start = Date.now();
 
-  const [western, chinese, vedic, lifePathResult, nameResult, tarot] = await Promise.all([
+  const [western, chinese, vedic, lifePathResult, nameResult, personalNumbersResult, pinnaclesResult, westernTransits, tarot] = await Promise.all([
     bd.date
       ? westernAstrologyTools.calculateBirthChart.execute!(
-          { date: bd.date, time: bd.time },
+          { date: bd.date, time: bd.time, latitude: bd.latitude, longitude: bd.longitude },
           {} as never
         )
       : Promise.resolve(null),
 
     bd.date
       ? chineseAstrologyTools.calculateChineseChart.execute!(
-          { date: bd.date, time: bd.time },
+          { date: bd.date, time: bd.time, readingDate: date },
           {} as never
         )
       : Promise.resolve(null),
 
     bd.date
       ? vedicAstrologyTools.calculateVedicChart.execute!(
-          { date: bd.date, time: bd.time },
+          { date: bd.date, time: bd.time, latitude: bd.latitude, longitude: bd.longitude },
           {} as never
         )
       : Promise.resolve(null),
@@ -77,6 +77,16 @@ export async function POST(req: Request) {
       ? numerologyTools.calculateNameNumbers.execute!({ fullName: bd.name }, {} as never)
       : Promise.resolve(null),
 
+    bd.date
+      ? numerologyTools.calculatePersonalNumbers.execute!({ birthdate: bd.date, date }, {} as never)
+      : Promise.resolve(null),
+
+    bd.date
+      ? numerologyTools.calculatePinnaclesAndChallenges.execute!({ birthdate: bd.date }, {} as never)
+      : Promise.resolve(null),
+
+    westernAstrologyTools.calculateTransitsForDate.execute!({ date }, {} as never),
+
     drawSeededCards(date, "three-card"),
   ]);
 
@@ -85,11 +95,18 @@ export async function POST(req: Request) {
     generatedAt: new Date().toISOString(),
     input: { birthData, date },
     traditions: {
-      western: western ?? { note: "No birth date provided" },
+      western: western
+        ? { ...western, transits: westernTransits }
+        : { note: "No birth date provided", transits: westernTransits },
       chinese: chinese ?? { note: "No birth date provided" },
       vedic: vedic ?? { note: "No birth date provided" },
-      numerology: lifePathResult || nameResult
-        ? { lifePath: lifePathResult, nameNumbers: nameResult }
+      numerology: lifePathResult || nameResult || personalNumbersResult
+        ? {
+            lifePath: lifePathResult,
+            nameNumbers: nameResult,
+            personalNumbers: personalNumbersResult,
+            pinnaclesAndChallenges: pinnaclesResult,
+          }
         : { note: "No birth data provided" },
       tarot,
     },

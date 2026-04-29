@@ -4,6 +4,8 @@ import { z } from "zod";
 import { experts } from "./experts/registry";
 import { judgeConfig } from "./experts/judge";
 import { loadKnowledge } from "./knowledge/loader";
+import { VOICE_RULES } from "./voice";
+import { FORMAT_RULES, sanitizeField } from "./format";
 import type { BirthData, ExpertResponse, StructuredExpertContent, ToolCallRecord, TokenUsage } from "./experts/types";
 import type { CoreTool, DataStreamWriter, Message } from "ai";
 
@@ -169,37 +171,42 @@ export function parseStructuredExpert(text: string): StructuredExpertContent {
   // 1. Try JSON
   const parsed = extractJson(text);
   if (parsed && ("facts" in parsed || "analysis" in parsed || "summary" in parsed)) {
+    const summary = sanitizeField(coerceToString(parsed.summary));
     return {
-      facts: coerceToString(parsed.facts),
-      analysis: coerceToString(parsed.analysis),
-      summary: coerceToString(parsed.summary),
-      oneLiner: coerceToString(parsed.oneLiner) || deriveOneLiner(coerceToString(parsed.summary)),
+      facts: sanitizeField(coerceToString(parsed.facts)),
+      analysis: sanitizeField(coerceToString(parsed.analysis)),
+      summary,
+      oneLiner: sanitizeField(coerceToString(parsed.oneLiner)) || deriveOneLiner(summary),
     };
   }
 
   // 2. Try markdown section extraction
   const { sections } = extractMarkdownSections(text);
   if (Object.keys(sections).length > 0) {
-    // Strip wrapping quotes and leading/trailing whitespace from oneLiner
-    const oneLiner = (sections.oneLiner ?? "").replace(/^\s*["']|["']\s*$/g, "").trim();
+    const summary = sanitizeField(sections.summary ?? "");
+    const oneLiner = sanitizeField(sections.oneLiner ?? "");
     return {
-      facts: sections.facts ?? "",
-      analysis: sections.analysis ?? "",
-      summary: sections.summary ?? "",
-      oneLiner: oneLiner || deriveOneLiner(sections.summary ?? sections.analysis ?? text),
+      facts: sanitizeField(sections.facts ?? ""),
+      analysis: sanitizeField(sections.analysis ?? ""),
+      summary,
+      oneLiner: oneLiner || deriveOneLiner(summary || sections.analysis || text),
     };
   }
 
   // 3. Last resort: dump full text into summary, derive a oneLiner
-  return { facts: "", analysis: "", summary: text, oneLiner: deriveOneLiner(text) };
+  const fallbackSummary = sanitizeField(text);
+  return { facts: "", analysis: "", summary: fallbackSummary, oneLiner: deriveOneLiner(fallbackSummary) };
 }
 
 export function parseJudgeOutput(text: string): { summary: string; oneLiner: string } {
   const parsed = extractJson(text);
   if (parsed && (parsed.summary || parsed.oneLiner)) {
-    return { summary: coerceToString(parsed.summary), oneLiner: coerceToString(parsed.oneLiner) };
+    return {
+      summary: sanitizeField(coerceToString(parsed.summary)),
+      oneLiner: sanitizeField(coerceToString(parsed.oneLiner)),
+    };
   }
-  return { summary: text, oneLiner: "" };
+  return { summary: sanitizeField(text), oneLiner: "" };
 }
 
 const EXPERT_OUTPUT_FORMAT = `
@@ -209,7 +216,7 @@ OUTPUT FORMAT — STRICT JSON ONLY. All four values MUST be plain text strings �
   "facts": "Write a prose paragraph of specific raw observations: positions, degrees, card names, pillar elements, life path number, etc. Example: 'Your Moon is in Sagittarius at 10.6°. Mercury is in Pisces at 26.1°. Saturn is in Aquarius.' Do NOT use nested objects.",
   "analysis": "3-5 sentences interpreting what these facts mean for this specific person and question.",
   "summary": "2-3 sentence reading capturing the essence.",
-  "oneLiner": "One sentence: the single most important insight."
+  "oneLiner": "FORMULA: '{punchy fact}. {short interpretation}. {recommended action}.' — three short sentences, each under 12 words. Modern and direct, like a smart friend texting. No flowery language, no 'the universe', no 'embrace your truth'. Lead with the most concrete fact from your tradition: tarot → the lead card drawn; western → the dominant transit or natal aspect; vedic → current dasha or moon nakshatra; chinese → the day pillar or active element; numerology → life path or current personal year/day number. Then one plain sentence on what it means right now. Then one concrete action for today. Examples — Tarot: 'You drew the High Priestess. Your gut already knows the answer. Stop polling everyone else.' Western: 'Mars squares your natal Saturn this week. Effort feels uphill. Pick one task and finish it before starting another.' Numerology: 'You're in a Personal Year 1. Reset energy is everywhere. Start the thing you've been postponing — today.'"
 }`;
 
 const JUDGE_OUTPUT_SCHEMA = z.object({
@@ -243,6 +250,8 @@ export async function runCouncil(
         .replace("{knowledge}", knowledge)
         .replace("{birthData}", birthDataStr)
         + `\n\nToday's date: ${todayStr}`
+        + "\n\n" + VOICE_RULES
+        + "\n\n" + FORMAT_RULES
         + EXPERT_OUTPUT_FORMAT;
 
       const effectiveModel = modelOverride ?? expert.model;
@@ -321,7 +330,7 @@ export async function runCouncil(
   const judgeSystemPrompt = judgeConfig.systemPromptTemplate.replace(
     "{expertOutputs}",
     expertOutputs
-  );
+  ) + "\n\n" + VOICE_RULES + "\n\n" + FORMAT_RULES;
 
   const lastMessage = messages[messages.length - 1];
   const userContent =

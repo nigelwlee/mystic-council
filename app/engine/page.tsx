@@ -25,14 +25,14 @@ type EndpointId =
   | "chart";
 
 const ENDPOINTS: { id: EndpointId; label: string; desc: string }[] = [
-  { id: "council", label: "Council", desc: "Full Q&A — all 5 experts + Oracle" },
+  { id: "chart", label: "Chart", desc: "No-LLM raw tool outputs only" },
   { id: "daily", label: "Daily", desc: "Today's daily reading" },
+  { id: "council", label: "Council", desc: "Full Q&A — all 5 experts + Oracle" },
   { id: "expert/western", label: "Western", desc: "Stella · birth chart + transits" },
   { id: "expert/chinese", label: "Chinese", desc: "Master Wei · Ba Zi + lunar" },
   { id: "expert/vedic", label: "Vedic", desc: "Priya · sidereal + dasha" },
   { id: "expert/tarot", label: "Tarot", desc: "Madame Crow · 3-card spread" },
   { id: "expert/numerology", label: "Numerology", desc: "Pythia · life path + name" },
-  { id: "chart", label: "Chart", desc: "No-LLM raw tool outputs only" },
 ];
 
 function defaultInput(endpoint: EndpointId): string {
@@ -46,6 +46,71 @@ function defaultInput(endpoint: EndpointId): string {
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 const STREAMING_ENDPOINTS: EndpointId[] = ["council", "daily"];
+
+// ─── Sequence model ──────────────────────────────────────────────────────────
+//
+// Recommended flow: chart → daily → council. Earlier steps' results are passed
+// forward as `chart` and `dailyReading` so interpretations stay coherent.
+
+const SEQUENCE: { step: number; id: EndpointId; label: string; tagline: string }[] = [
+  { step: 1, id: "chart", label: "Chart", tagline: "Deterministic facts (no LLM)" },
+  { step: 2, id: "daily", label: "Daily", tagline: "Today's reading — needs Chart" },
+  { step: 3, id: "council", label: "Council", tagline: "Q&A — needs Chart + Daily" },
+];
+
+const STEP_BY_ENDPOINT: Partial<Record<EndpointId, number>> = {
+  chart: 1,
+  daily: 2,
+  council: 3,
+};
+
+/** Stable JSON-stringify of birthData for prereq-match comparison. */
+function birthKey(bd: unknown): string {
+  if (!bd || typeof bd !== "object") return "null";
+  const b = bd as Record<string, unknown>;
+  return JSON.stringify({
+    name: b.name ?? null,
+    date: b.date ?? null,
+    time: b.time ?? null,
+    latitude: b.latitude ?? null,
+    longitude: b.longitude ?? null,
+  });
+}
+
+type PrereqMatch = {
+  chart?: Record<string, unknown>;
+  chartKey?: string;
+  dailyReading?: Record<string, unknown>;
+  dailyKey?: string;
+};
+
+/** Returns prerequisite results from `results` whose birthData+date match the
+ * input the user is about to send. */
+function findPrereqs(
+  input: { birthData?: unknown; date?: unknown },
+  results: Partial<Record<EndpointId, Record<string, unknown>>>,
+): PrereqMatch {
+  const wantBd = birthKey(input.birthData);
+  const wantDate = String(input.date ?? "");
+
+  const matches = (r: Record<string, unknown> | undefined): boolean => {
+    if (!r) return false;
+    const ri = r.input as { birthData?: unknown; date?: unknown } | undefined;
+    if (!ri) return false;
+    return birthKey(ri.birthData) === wantBd && String(ri.date ?? "") === wantDate;
+  };
+
+  const out: PrereqMatch = {};
+  if (matches(results.chart)) {
+    out.chart = results.chart;
+    out.chartKey = String((results.chart as Record<string, unknown>).id ?? "");
+  }
+  if (matches(results.daily)) {
+    out.dailyReading = results.daily;
+    out.dailyKey = String((results.daily as Record<string, unknown>).id ?? "");
+  }
+  return out;
+}
 
 type Tab = "oneLiner" | "summary" | "analysis" | "facts" | "raw" | "prompt";
 const TABS: { id: Tab; label: string }[] = [
@@ -470,6 +535,27 @@ function SkelExpertCard() {
   );
 }
 
+function PrereqChip({
+  label,
+  state,
+}: {
+  label: string;
+  state: "inline" | "attached" | "missing";
+}) {
+  const config = {
+    inline: { dot: "●", color: "text-emerald-500", note: "in input JSON" },
+    attached: { dot: "●", color: "text-emerald-500", note: "auto-attaching from cached result" },
+    missing: { dot: "○", color: "text-neutral-600", note: "not provided — run prior step" },
+  }[state];
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className={config.color}>{config.dot}</span>
+      <span className="text-neutral-300">{label}</span>
+      <span className="text-neutral-600">— {config.note}</span>
+    </div>
+  );
+}
+
 function Skeleton({ endpoint }: { endpoint: EndpointId }) {
   const showExperts = endpoint === "council" || endpoint === "daily";
   const showSingleExpert = endpoint.startsWith("expert/");
@@ -531,13 +617,460 @@ function Skeleton({ endpoint }: { endpoint: EndpointId }) {
   );
 }
 
+// ─── SSE helper ──────────────────────────────────────────────────────────────
+
+async function runSse(
+  url: string,
+  body: unknown,
+  onExpert: (e: Record<string, unknown>) => void,
+  onOracle: (o: Record<string, unknown>) => void,
+): Promise<Record<string, unknown>> {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok || !res.body) {
+    const errBody = await res.text().catch(() => "");
+    throw new Error(`HTTP ${res.status}${errBody ? `: ${errBody.slice(0, 300)}` : ""}`);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  let runResult: Record<string, unknown> = {};
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop() ?? "";
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      try {
+        const event = JSON.parse(line.slice(6)) as Record<string, unknown>;
+        if (event.type === "expert-complete") {
+          const { type: _t, ...expertData } = event;
+          onExpert(expertData as Record<string, unknown>);
+        } else if (event.type === "oracle-complete") {
+          onOracle(event.oracle as Record<string, unknown>);
+        } else if (event.type === "run-complete") {
+          const { type: _t, ...runData } = event;
+          runResult = runData as Record<string, unknown>;
+        }
+      } catch { /* ignore malformed lines */ }
+    }
+  }
+  return runResult;
+}
+
+// ─── Run Sequence view ────────────────────────────────────────────────────────
+
+const TRADITION_META: Record<string, { emoji: string; label: string }> = {
+  western: { emoji: "♈", label: "Western" },
+  chinese: { emoji: "🐉", label: "Chinese" },
+  vedic: { emoji: "🕉", label: "Vedic" },
+  tarot: { emoji: "🃏", label: "Tarot" },
+  numerology: { emoji: "∞", label: "Numerology" },
+};
+
+function tradPreview(tradId: string, data: unknown): string {
+  if (!data || typeof data !== "object") return "";
+  const obj = data as Record<string, unknown>;
+
+  if (tradId === "numerology") {
+    const lp = (obj.lifePath as Record<string, unknown> | null)?.lifePath;
+    const pd = (obj.personalNumbers as Record<string, unknown> | null)?.personalDay;
+    const py = (obj.personalNumbers as Record<string, unknown> | null)?.personalYear;
+    const bits: string[] = [];
+    if (lp != null) bits.push(`lifePath: ${lp}`);
+    if (pd != null) bits.push(`personalDay: ${pd}`);
+    else if (py != null) bits.push(`personalYear: ${py}`);
+    return bits.join(" · ");
+  }
+
+  const bits: string[] = [];
+  for (const [k, v] of Object.entries(obj)) {
+    if (bits.length >= 2) break;
+    if (v == null) continue;
+    if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") {
+      bits.push(`${k}: ${v}`);
+    } else if (Array.isArray(v) && v.length > 0) {
+      const first = v[0];
+      if (typeof first === "string" || typeof first === "number") {
+        bits.push(`${k}: ${v.slice(0, 3).join(", ")}${v.length > 3 ? "…" : ""}`);
+      } else {
+        bits.push(`${k}: ${v.length} item${v.length === 1 ? "" : "s"}`);
+      }
+    }
+  }
+  return bits.join(" · ");
+}
+
+function renderValue(v: unknown): React.ReactNode {
+  if (v == null) return <span className="text-neutral-700 italic">null</span>;
+  if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") return String(v);
+  return (
+    <pre className="text-[10px] font-mono text-neutral-400 whitespace-pre-wrap break-all bg-neutral-950/60 px-2 py-1 rounded mt-0.5">
+      {JSON.stringify(v, null, 2)}
+    </pre>
+  );
+}
+
+function ChartCard({ tradId, data }: { tradId: string; data: unknown }) {
+  const [open, setOpen] = useState(false);
+  const meta = TRADITION_META[tradId] ?? { emoji: "·", label: tradId };
+  const preview = tradPreview(tradId, data);
+  const entries = data && typeof data === "object" ? Object.entries(data as Record<string, unknown>) : [];
+
+  return (
+    <div className="border border-neutral-800 rounded overflow-hidden">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full text-left px-3 py-2 hover:bg-neutral-900 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <span className="text-base">{meta.emoji}</span>
+          <span className="text-xs font-mono text-neutral-300">{meta.label}</span>
+          <span className="ml-auto text-[10px] font-mono text-neutral-700">{open ? "▲" : "▼"}</span>
+        </div>
+        {preview && <div className="text-[10px] text-neutral-600 mt-1 truncate">{preview}</div>}
+      </button>
+      {open && (
+        <div className="border-t border-neutral-800 px-3 py-2 bg-neutral-950/40 space-y-1.5">
+          {entries.length === 0 ? (
+            <div className="text-[10px] text-neutral-700 italic">empty</div>
+          ) : (
+            entries.map(([k, v]) => (
+              <div key={k} className="text-[11px] font-mono">
+                <div className="text-neutral-600">{k}</div>
+                <div className="text-neutral-300 ml-2">{renderValue(v)}</div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RunSequenceView() {
+  const [name, setName] = useState(DEFAULT_BIRTH_DATA.name);
+  const [dob, setDob] = useState(DEFAULT_BIRTH_DATA.date);
+  const [time, setTime] = useState(DEFAULT_BIRTH_DATA.time);
+  const [lat, setLat] = useState(String(DEFAULT_BIRTH_DATA.latitude));
+  const [lng, setLng] = useState(String(DEFAULT_BIRTH_DATA.longitude));
+  const [location, setLocation] = useState(DEFAULT_BIRTH_DATA.location);
+  const [date, setDate] = useState(() => new Date().toLocaleDateString("en-CA"));
+
+  const [geocoding, setGeocoding] = useState(false);
+  useEffect(() => {
+    if (!location.trim() || location === DEFAULT_BIRTH_DATA.location) return;
+    const id = setTimeout(async () => {
+      setGeocoding(true);
+      try {
+        const res = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(location)}`,
+          { headers: { "Accept-Language": "en" } },
+        );
+        const data = await res.json() as { lat: string; lon: string }[];
+        if (data[0]) {
+          setLat(parseFloat(data[0].lat).toFixed(4));
+          setLng(parseFloat(data[0].lon).toFixed(4));
+        }
+      } catch { /* ignore */ } finally {
+        setGeocoding(false);
+      }
+    }, 800);
+    return () => clearTimeout(id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location]);
+
+  const [chart, setChart] = useState<Record<string, unknown> | null>(null);
+  const [dailyExperts, setDailyExperts] = useState<Record<string, unknown>[]>([]);
+  const [dailyOracle, setDailyOracle] = useState<Record<string, unknown> | null>(null);
+  const [dailyFull, setDailyFull] = useState<Record<string, unknown> | null>(null);
+
+  const [chatInput, setChatInput] = useState("");
+  const [chatHistory, setChatHistory] = useState<{ q: string; experts: Record<string, unknown>[]; oracle: Record<string, unknown> | null; error?: string; ts: number; durationMs: number }[]>([]);
+  const [chatStartedAt, setChatStartedAt] = useState<number | null>(null);
+  const [chatElapsed, setChatElapsed] = useState(0);
+
+  useEffect(() => {
+    if (chatStartedAt === null) return;
+    const id = setInterval(() => setChatElapsed(Date.now() - chatStartedAt), 100);
+    return () => clearInterval(id);
+  }, [chatStartedAt]);
+
+  const [busy, setBusy] = useState<"chart" | "daily" | "council" | null>(null);
+  const [showSummaries, setShowSummaries] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const birthData = {
+    name, date: dob, time,
+    latitude: parseFloat(lat) || 0,
+    longitude: parseFloat(lng) || 0,
+    location,
+  };
+
+  const runAll = async () => {
+    setBusy("chart");
+    setError(null);
+    setChart(null);
+    setDailyExperts([]);
+    setDailyOracle(null);
+    setDailyFull(null);
+
+    let chartResult: Record<string, unknown>;
+    try {
+      const res = await fetch("/api/chart", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ birthData, date }),
+      });
+      if (!res.ok) throw new Error(`Chart HTTP ${res.status}: ${await res.text()}`);
+      chartResult = await res.json() as Record<string, unknown>;
+      setChart(chartResult);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setBusy(null);
+      return;
+    }
+
+    setBusy("daily");
+    const liveExperts: Record<string, unknown>[] = [];
+    try {
+      const dailyRunResult = await runSse(
+        "/api/daily/stream",
+        { birthData, date, chart: chartResult },
+        (e) => { liveExperts.push(e); setDailyExperts([...liveExperts]); },
+        (o) => setDailyOracle(o),
+      );
+      setDailyFull(dailyRunResult);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+
+    setBusy(null);
+  };
+
+  const sendChat = async () => {
+    const q = chatInput.trim();
+    if (!q || busy) return;
+    setChatInput("");
+    setBusy("council");
+    const startedAt = Date.now();
+    setChatStartedAt(startedAt);
+    setChatElapsed(0);
+    const chatExperts: Record<string, unknown>[] = [];
+    let chatOracle: Record<string, unknown> | null = null;
+    try {
+      await runSse(
+        "/api/council/stream",
+        {
+          birthData, date, question: q,
+          ...(chart ? { chart } : {}),
+          ...(dailyFull ? { dailyReading: dailyFull } : {}),
+        },
+        (e) => { chatExperts.push(e); },
+        (o) => { chatOracle = o; },
+      );
+      const durationMs = Date.now() - startedAt;
+      setChatHistory((prev) => [{ q, experts: chatExperts, oracle: chatOracle, ts: startedAt, durationMs }, ...prev]);
+    } catch (e) {
+      const durationMs = Date.now() - startedAt;
+      setChatHistory((prev) => [{ q, experts: chatExperts, oracle: chatOracle, error: e instanceof Error ? e.message : String(e), ts: startedAt, durationMs }, ...prev]);
+    }
+    setChatStartedAt(null);
+    setBusy(null);
+  };
+
+  const traditions = chart?.traditions as Record<string, unknown> | undefined;
+
+  const inputRows: [string, string, (v: string) => void][] = [
+    ["Name", name, setName],
+    ["Date of birth", dob, setDob],
+    ["Time", time, setTime],
+  ];
+
+  return (
+    <div className="p-4 max-w-4xl">
+      {/* Inputs */}
+      <section className="mb-6">
+        <div className="text-[10px] font-mono uppercase tracking-widest text-neutral-600 mb-2">Inputs</div>
+        <div className="grid grid-cols-[auto_1fr_auto_1fr] gap-x-6 gap-y-1.5 text-[11px] font-mono mb-3">
+          {inputRows.map(([label, val, setter]) => (
+            <Fragment key={label}>
+              <span className="text-neutral-600 self-center whitespace-nowrap">{label}</span>
+              <input
+                value={val}
+                onChange={(e) => setter(e.target.value)}
+                className="bg-neutral-900 border border-neutral-800 text-neutral-300 px-2 py-1 text-[11px] font-mono focus:outline-none focus:border-neutral-600 rounded"
+              />
+            </Fragment>
+          ))}
+          {/* Location with auto-geocoding */}
+          <span className="text-neutral-600 self-center whitespace-nowrap">Location</span>
+          <div className="relative">
+            <input
+              value={location}
+              onChange={(e) => setLocation(e.target.value)}
+              placeholder="city or place name"
+              className="w-full bg-neutral-900 border border-neutral-800 text-neutral-300 px-2 py-1 text-[11px] font-mono focus:outline-none focus:border-neutral-600 rounded"
+            />
+            {geocoding && <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[9px] text-amber-500 font-mono animate-pulse">locating…</span>}
+          </div>
+          <span className="text-neutral-600 self-center whitespace-nowrap">Latitude</span>
+          <input
+            value={lat}
+            onChange={(e) => setLat(e.target.value)}
+            className="bg-neutral-900 border border-neutral-800 text-neutral-300 px-2 py-1 text-[11px] font-mono focus:outline-none focus:border-neutral-600 rounded"
+          />
+          <span className="text-neutral-600 self-center whitespace-nowrap">Longitude</span>
+          <input
+            value={lng}
+            onChange={(e) => setLng(e.target.value)}
+            className="bg-neutral-900 border border-neutral-800 text-neutral-300 px-2 py-1 text-[11px] font-mono focus:outline-none focus:border-neutral-600 rounded"
+          />
+          <span className="text-neutral-600 self-center whitespace-nowrap">Reading date</span>
+          <input
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+            className="bg-neutral-900 border border-neutral-800 text-neutral-300 px-2 py-1 text-[11px] font-mono focus:outline-none focus:border-neutral-600 rounded"
+          />
+          <span />
+        </div>
+        <button
+          onClick={runAll}
+          disabled={busy !== null}
+          className="px-4 py-1.5 text-[11px] font-mono uppercase tracking-widest bg-neutral-800 hover:bg-neutral-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors rounded"
+        >
+          {busy === "chart" ? "Running chart…" : busy === "daily" ? "Running daily…" : "▶  Run Chart + Daily"}
+        </button>
+        {error && (
+          <div className="mt-3 text-[11px] font-mono text-red-400 bg-red-950/20 border border-red-900/40 rounded p-2 whitespace-pre-wrap">
+            {error}
+          </div>
+        )}
+      </section>
+
+      {/* Step 1: Chart cards */}
+      {traditions && (
+        <section className="mb-6">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-neutral-600 mb-2">1. Chart</div>
+          <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}>
+            {Object.entries(traditions).map(([tradId, data]) => (
+              <ChartCard key={tradId} tradId={tradId} data={data} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Step 2: Daily one-liners */}
+      {(dailyExperts.length > 0 || dailyOracle) && (
+        <section className="mb-6">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="text-[10px] font-mono uppercase tracking-widest text-neutral-600">2. Daily</div>
+            <button
+              onClick={() => setShowSummaries((v) => !v)}
+              className="text-[10px] font-mono text-neutral-700 hover:text-neutral-400 transition-colors"
+            >
+              {showSummaries ? "hide summaries" : "show summaries"}
+            </button>
+            {busy === "daily" && <span className="text-[10px] font-mono text-amber-500 animate-pulse">streaming…</span>}
+          </div>
+          {dailyOracle && (
+            <div className="mb-3 text-sm text-amber-400/90 leading-relaxed">
+              ◈ {dailyOracle.oneLiner as string}
+            </div>
+          )}
+          <div className="space-y-1.5">
+            {dailyExperts.map((e, i) => {
+              const content = e.content as Record<string, string> | undefined;
+              return (
+                <div key={i} className="text-[11px] font-mono">
+                  <span className="text-neutral-600">{e.expertEmoji as string} {e.expertName as string}:</span>{" "}
+                  <span className="text-neutral-300">{content?.oneLiner ?? ""}</span>
+                  {showSummaries && content?.summary && (
+                    <div className="text-[10px] text-neutral-600 mt-0.5 ml-4 leading-snug">{content.summary}</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* Step 3: Chat */}
+      {dailyFull !== null && (
+        <section className="mb-6">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-neutral-600 mb-2">3. Chat</div>
+          <div className="flex gap-2 mb-4">
+            <textarea
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void sendChat(); } }}
+              placeholder="Ask the council anything…"
+              rows={2}
+              className="flex-1 bg-neutral-900 border border-neutral-800 text-[11px] font-mono text-neutral-300 px-2 py-1.5 resize-none focus:outline-none focus:border-neutral-600 rounded"
+            />
+            <button
+              onClick={() => void sendChat()}
+              disabled={busy !== null || !chatInput.trim()}
+              className="px-3 py-1.5 text-[11px] font-mono uppercase tracking-widest bg-neutral-800 hover:bg-neutral-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors rounded self-start"
+            >
+              {busy === "council" ? "…" : "Ask"}
+            </button>
+          </div>
+          {busy === "council" && chatStartedAt !== null && (
+            <div className="mb-4 border-t border-neutral-900 pt-3 flex items-center gap-3 text-[11px] font-mono">
+              <span className="inline-block w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
+              <span className="text-amber-400">Council deliberating…</span>
+              <span className="text-neutral-500">{(chatElapsed / 1000).toFixed(1)}s</span>
+            </div>
+          )}
+          {chatHistory.map((item) => (
+            <div key={item.ts} className="mb-5 border-t border-neutral-900 pt-3">
+              <div className="flex items-baseline justify-between gap-3 mb-2">
+                <div className="text-[10px] font-mono text-neutral-600">Q: {item.q}</div>
+                <div className="text-[9px] font-mono text-neutral-700 whitespace-nowrap shrink-0">
+                  {new Date(item.ts).toLocaleTimeString()} · {(item.durationMs / 1000).toFixed(1)}s
+                </div>
+              </div>
+              {item.oracle && (
+                <div className="mb-1 text-sm text-amber-400/90 leading-relaxed">
+                  ◈ {item.oracle.oneLiner as string}
+                </div>
+              )}
+              {item.oracle && (item.oracle.summary as string) && (
+                <div className="mb-3 text-[11px] text-neutral-400 leading-relaxed">
+                  {item.oracle.summary as string}
+                </div>
+              )}
+              <div className="space-y-1">
+                {item.experts.map((e, i) => {
+                  const content = e.content as Record<string, string> | undefined;
+                  const text = content?.oneLiner || content?.summary || (e.error as string | undefined) || "";
+                  if (!text) return null;
+                  return (
+                    <div key={i} className="text-[11px] font-mono">
+                      <span className="text-neutral-600">{e.expertEmoji as string} {e.expertName as string}:</span>{" "}
+                      <span className={e.error ? "text-red-400" : "text-neutral-300"}>{text}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function EngineInspector() {
-  if (process.env.NODE_ENV !== "development") {
-    notFound();
-  }
-
+  const [view, setView] = useState<"run-sequence" | EndpointId>("run-sequence");
   const [endpoint, setEndpoint] = useState<EndpointId>("council");
   const [inputJson, setInputJson] = useState(() => defaultInput("council"));
   const [results, setResults] = useState<Partial<Record<EndpointId, Record<string, unknown>>>>({});
@@ -558,6 +1091,7 @@ export default function EngineInspector() {
   const selectEndpoint = (id: EndpointId) => {
     setEndpoint(id);
     setInputJson(defaultInput(id));
+    setView(id);
   };
 
   const finalizeResult = (data: Record<string, unknown>, body: unknown, ep: EndpointId) => {
@@ -603,6 +1137,19 @@ export default function EngineInspector() {
       setErrors((prev) => ({ ...prev, [endpoint]: "Invalid JSON in input" }));
       setIsLoading(false);
       return;
+    }
+
+    // Auto-attach prerequisite results for council/daily based on matching birthData+date.
+    // User-provided values in the JSON take precedence (we only fill in when missing).
+    if (endpoint === "council" || endpoint === "daily") {
+      const inputObj = body as Record<string, unknown>;
+      const prereqs = findPrereqs(inputObj, results);
+      if (prereqs.chart && inputObj.chart === undefined) {
+        body = { ...inputObj, chart: prereqs.chart };
+      }
+      if (endpoint === "council" && prereqs.dailyReading && (body as Record<string, unknown>).dailyReading === undefined) {
+        body = { ...(body as Record<string, unknown>), dailyReading: prereqs.dailyReading };
+      }
     }
 
     // Streaming path for council/daily
@@ -690,6 +1237,26 @@ export default function EngineInspector() {
   const error = errors[endpoint] ?? null;
   const clientMs = clientMsMap[endpoint] ?? null;
 
+  // Prereq state for the *current* input (so the UX reflects what the next Run
+  // would actually attach). Falls back to defaults if input JSON is unparseable.
+  const currentInput: { birthData?: unknown; date?: unknown } = (() => {
+    try { return JSON.parse(inputJson); } catch { return {}; }
+  })();
+  const livePrereqs = findPrereqs(currentInput, results);
+  const willAttachChart = (endpoint === "council" || endpoint === "daily")
+    && livePrereqs.chart !== undefined
+    && (currentInput as Record<string, unknown>).chart === undefined;
+  const willAttachDaily = endpoint === "council"
+    && livePrereqs.dailyReading !== undefined
+    && (currentInput as Record<string, unknown>).dailyReading === undefined;
+  const sequenceStatus = (epId: EndpointId): "done" | "ready" | "blocked" => {
+    if (results[epId]) return "done";
+    if (epId === "chart") return "ready";
+    if (epId === "daily") return results.chart ? "ready" : "blocked";
+    if (epId === "council") return results.daily ? "ready" : results.chart ? "ready" : "blocked";
+    return "ready";
+  };
+
   // During streaming, display partial state; after done, use stored result
   const isStreaming = isLoading && STREAMING_ENDPOINTS.includes(endpoint);
   const result = isStreaming ? null : storedResult;
@@ -733,57 +1300,185 @@ export default function EngineInspector() {
 
       {/* ── Left rail: endpoint + input ── */}
       <div className="flex flex-col border-r border-neutral-800 overflow-y-auto">
+        {/* Run Sequence */}
         <div className="px-3 py-3 border-b border-neutral-800">
-          <div className="text-[10px] font-mono uppercase tracking-widest text-neutral-600 mb-2">Endpoint</div>
-          <div className="space-y-0.5">
-            {ENDPOINTS.map((ep) => (
-              <button
-                key={ep.id}
-                onClick={() => selectEndpoint(ep.id)}
-                className={`w-full text-left px-2 py-1.5 rounded text-xs transition-colors ${
-                  endpoint === ep.id
-                    ? "bg-neutral-800 text-neutral-100"
-                    : "text-neutral-500 hover:text-neutral-300 hover:bg-neutral-900"
-                }`}
-              >
-                <div className="font-mono">{ep.label}</div>
-                <div className="text-[10px] text-neutral-600 leading-tight">{ep.desc}</div>
-              </button>
-            ))}
+          <button
+            onClick={() => setView("run-sequence")}
+            className={`w-full text-left px-2 py-2 rounded text-xs font-mono transition-colors ${
+              view === "run-sequence"
+                ? "bg-neutral-800 text-neutral-100"
+                : "text-neutral-500 hover:text-neutral-300 hover:bg-neutral-900"
+            }`}
+          >
+            <div className="font-semibold tracking-wide">Run Sequence</div>
+            <div className="text-[10px] text-neutral-600 leading-tight mt-0.5">Chart → Daily → Chat</div>
+          </button>
+        </div>
+
+        {/* Sequence guide */}
+        <div className="px-3 py-3 border-b border-neutral-800">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-neutral-600 mb-2">
+            Recommended sequence
+          </div>
+          <div className="flex items-center gap-1.5 text-[10px] font-mono">
+            {SEQUENCE.map((s, i) => {
+              const status = sequenceStatus(s.id);
+              const isActive = endpoint === s.id;
+              const dot = status === "done" ? "●" : status === "ready" ? "○" : "·";
+              const dotColor =
+                status === "done" ? "text-emerald-500"
+                : status === "ready" ? "text-amber-500"
+                : "text-neutral-700";
+              return (
+                <Fragment key={s.id}>
+                  <button
+                    onClick={() => selectEndpoint(s.id)}
+                    className={`flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors ${
+                      view === s.id ? "bg-neutral-800 text-neutral-100" : "text-neutral-500 hover:text-neutral-300"
+                    }`}
+                    title={`Step ${s.step}: ${s.tagline}`}
+                  >
+                    <span className={dotColor}>{dot}</span>
+                    <span>{s.step}.</span>
+                    <span>{s.label}</span>
+                  </button>
+                  {i < SEQUENCE.length - 1 && <span className="text-neutral-700">→</span>}
+                </Fragment>
+              );
+            })}
+          </div>
+          <div className="mt-2 text-[10px] text-neutral-600 leading-snug">
+            Run in order. Each step's output is auto-attached to the next when birthData + date match.
           </div>
         </div>
 
-        <div className="flex-1 px-3 py-3 flex flex-col min-h-0">
-          <div className="text-[10px] font-mono uppercase tracking-widest text-neutral-600 mb-2">Input JSON</div>
-          <textarea
-            value={inputJson}
-            onChange={(e) => setInputJson(e.target.value)}
-            className="flex-1 w-full bg-neutral-900 border border-neutral-800 text-[11px] font-mono text-neutral-300 p-2 resize-none focus:outline-none focus:border-neutral-600 rounded min-h-[200px]"
-            spellCheck={false}
-          />
+        <div className="px-3 py-3 border-b border-neutral-800">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-neutral-600 mb-2">Endpoint</div>
+          <div className="space-y-0.5">
+            {ENDPOINTS.map((ep) => {
+              const step = STEP_BY_ENDPOINT[ep.id];
+              const status = step ? sequenceStatus(ep.id) : null;
+              const dot = status === "done" ? "●" : status === "ready" ? "○" : status === "blocked" ? "·" : null;
+              const dotColor =
+                status === "done" ? "text-emerald-500"
+                : status === "ready" ? "text-amber-500"
+                : "text-neutral-700";
+              return (
+                <button
+                  key={ep.id}
+                  onClick={() => selectEndpoint(ep.id)}
+                  className={`w-full text-left px-2 py-1.5 rounded text-xs transition-colors ${
+                    view === ep.id
+                      ? "bg-neutral-800 text-neutral-100"
+                      : "text-neutral-500 hover:text-neutral-300 hover:bg-neutral-900"
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 font-mono">
+                    {step && dot && <span className={`text-[10px] ${dotColor}`}>{dot}</span>}
+                    {step && <span className="text-[10px] text-neutral-600">{step}.</span>}
+                    <span>{ep.label}</span>
+                  </div>
+                  <div className="text-[10px] text-neutral-600 leading-tight pl-0">{ep.desc}</div>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        <div className="px-3 pb-4">
-          <button
-            onClick={run}
-            disabled={isLoading}
-            className="w-full py-2 text-xs font-mono uppercase tracking-widest bg-neutral-800 hover:bg-neutral-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors rounded"
-          >
-            {isLoading ? "Running…" : "▶  Run"}
-          </button>
-        </div>
+        {/* Prerequisite status — only on council/daily endpoint views */}
+        {view !== "run-sequence" && (endpoint === "council" || endpoint === "daily") && (
+          <div className="px-3 py-3 border-b border-neutral-800">
+            <div className="text-[10px] font-mono uppercase tracking-widest text-neutral-600 mb-2">
+              Prerequisites
+            </div>
+            <div className="space-y-1 text-[10px] font-mono">
+              <PrereqChip
+                label="Chart"
+                state={
+                  (currentInput as Record<string, unknown>).chart !== undefined
+                    ? "inline"
+                    : willAttachChart
+                      ? "attached"
+                      : "missing"
+                }
+              />
+              {endpoint === "council" && (
+                <PrereqChip
+                  label="Daily reading"
+                  state={
+                    (currentInput as Record<string, unknown>).dailyReading !== undefined
+                      ? "inline"
+                      : willAttachDaily
+                        ? "attached"
+                        : "missing"
+                  }
+                />
+              )}
+            </div>
+            {(!willAttachChart && (currentInput as Record<string, unknown>).chart === undefined) && (
+              <button
+                onClick={() => selectEndpoint("chart")}
+                className="mt-2 text-[10px] font-mono text-amber-500 hover:text-amber-400 transition-colors"
+              >
+                → Run /api/chart first for coherent results
+              </button>
+            )}
+            {endpoint === "council" && !willAttachDaily && (currentInput as Record<string, unknown>).dailyReading === undefined && results.chart && (
+              <button
+                onClick={() => selectEndpoint("daily")}
+                className="mt-1 text-[10px] font-mono text-amber-500 hover:text-amber-400 transition-colors"
+              >
+                → Run /api/daily next so council respects today's frame
+              </button>
+            )}
+          </div>
+        )}
+
+        {view !== "run-sequence" && (
+          <>
+            <div className="flex-1 px-3 py-3 flex flex-col min-h-0">
+              <div className="text-[10px] font-mono uppercase tracking-widest text-neutral-600 mb-2">Input JSON</div>
+              <textarea
+                value={inputJson}
+                onChange={(e) => setInputJson(e.target.value)}
+                className="flex-1 w-full bg-neutral-900 border border-neutral-800 text-[11px] font-mono text-neutral-300 p-2 resize-none focus:outline-none focus:border-neutral-600 rounded min-h-[200px]"
+                spellCheck={false}
+              />
+            </div>
+            <div className="px-3 pb-4">
+              <button
+                onClick={run}
+                disabled={isLoading}
+                className="w-full py-2 text-xs font-mono uppercase tracking-widest bg-neutral-800 hover:bg-neutral-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors rounded"
+              >
+                {isLoading ? "Running…" : "▶  Run"}
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       {/* ── Center: results ── */}
-      <div className="overflow-y-auto p-4 min-w-0">
+      <div className="overflow-y-auto min-w-0">
+        <div className={view === "run-sequence" ? "block" : "hidden"}><RunSequenceView /></div>
+        <div className={view === "run-sequence" ? "hidden" : "p-4"}>
         {/* Run header */}
-        {(result !== null || storedResult !== null || error !== null || isLoading) && (
+        {(result !== null || storedResult !== null || error !== null || isLoading) && (() => {
+          const sentInput = (storedResult?.input as Record<string, unknown> | undefined) ?? null;
+          const usedChart = sentInput?.chart !== undefined;
+          const usedDaily = sentInput?.dailyReading !== undefined;
+          return (
           <div className="flex items-center gap-3 mb-4 text-[10px] font-mono text-neutral-600 flex-wrap">
             <span className="uppercase tracking-widest">POST /api/{endpoint}</span>
             {clientMs != null && <span>{clientMs}ms client</span>}
             {serverMs != null && <span>{serverMs}ms server</span>}
             {totalTokens > 0 && <span className="text-neutral-500">{totalTokens.toLocaleString()} tok</span>}
             {totalCost > 0 && <span className="text-neutral-500">{formatCost(totalCost)}</span>}
+            {(usedChart || usedDaily) && (
+              <span className="text-emerald-600 border border-emerald-900 px-1.5 py-0.5 rounded">
+                {[usedChart && "+chart", usedDaily && "+daily"].filter(Boolean).join(" ")}
+              </span>
+            )}
             {error && <span className="text-red-500">error</span>}
             {result !== null && (
               <div className="ml-auto flex gap-2">
@@ -795,7 +1490,8 @@ export default function EngineInspector() {
               </div>
             )}
           </div>
-        )}
+          );
+        })()}
 
         {/* Streaming progress strip */}
         {isLoading && STREAMING_ENDPOINTS.includes(endpoint) && (
@@ -968,6 +1664,7 @@ export default function EngineInspector() {
         )}
 
         {!result && !error && !isLoading && !isStreaming && <Skeleton endpoint={endpoint} />}
+        </div>
       </div>
 
       {/* ── Right rail: history ── */}
