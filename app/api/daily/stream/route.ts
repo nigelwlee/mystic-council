@@ -2,7 +2,7 @@ import { generateText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { parseJudgeOutput } from "@/lib/orchestrator";
 import { experts } from "@/lib/experts/registry";
-import { judgeConfig } from "@/lib/experts/judge";
+import { judgeDailyConfig as judgeConfig } from "@/lib/experts/judge";
 import { runSingleExpert } from "@/lib/api/run-expert";
 import { EXPERT_ID_TO_TRADITION } from "@/lib/constants/traditions";
 import { ContextInputSchema } from "@/lib/api/schemas";

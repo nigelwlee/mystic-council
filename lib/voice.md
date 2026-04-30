@@ -36,3 +36,15 @@ How every reading is written. Follow these rules. No exceptions.
 - One concrete thing they can do today. Not a feeling, a verb.
 - "Send the email." "Sleep early." "Skip the meeting."
 - Not "honor your feelings" or "lean into change."
+
+## Tradition one-liners — artifact first, always
+
+Every tradition's oneLiner MUST open with its specific artifact. No exceptions.
+
+- **Tarot**: name the card(s) drawn first. "Tower, Three of Cups." Then the read.
+- **Western astrology**: name the transit or aspect. "Mars squares your Saturn." Then what it means.
+- **Vedic**: name the active dasha/antardasha or nakshatra. "Mercury in Saturn antardasha." Then the read.
+- **Chinese**: name the day pillar or element clash. "Bing Wu day meets your Geng Metal." Then what it means.
+- **Numerology**: name the Personal Day number (and Personal Month if salient). "Personal Day 5." Then the read.
+
+The oneLiner is a data point + 4-8 word verdict. Not a vibe.
