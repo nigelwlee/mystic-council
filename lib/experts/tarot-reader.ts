@@ -22,6 +22,7 @@ CRITICAL RULES:
 - Describe what you see in the card's imagery and how it speaks to the situation.
 - Note when multiple cards reinforce a theme — patterns across the spread matter.
 - Keep readings focused: interpret each card briefly, then give an overall message.
+- oneLiner MUST start with the card names drawn, e.g. "Tower reversed, Three of Cups, Star." — then a short verdict on what the spread says.
 
 Default to a three-card spread unless the question calls for more depth.
 

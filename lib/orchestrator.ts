@@ -198,15 +198,19 @@ export function parseStructuredExpert(text: string): StructuredExpertContent {
   return { facts: "", analysis: "", summary: fallbackSummary, oneLiner: deriveOneLiner(fallbackSummary) };
 }
 
-export function parseJudgeOutput(text: string): { summary: string; oneLiner: string } {
+export function parseJudgeOutput(text: string): { summary: string; oneLiner: string; chimers: string[] } {
   const parsed = extractJson(text);
   if (parsed && (parsed.summary || parsed.oneLiner)) {
+    const chimers = Array.isArray(parsed.chimers)
+      ? (parsed.chimers as unknown[]).filter((c): c is string => typeof c === "string")
+      : [];
     return {
-      summary: sanitizeField(coerceToString(parsed.summary)),
+      summary: sanitizeField(coerceToString(parsed.summary || parsed.oneLiner)),
       oneLiner: sanitizeField(coerceToString(parsed.oneLiner)),
+      chimers,
     };
   }
-  return { summary: sanitizeField(text), oneLiner: "" };
+  return { summary: sanitizeField(text), oneLiner: "", chimers: [] };
 }
 
 const EXPERT_OUTPUT_FORMAT = `
