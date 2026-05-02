@@ -9,34 +9,17 @@ import { QuestionInputSchema } from "@/lib/api/schemas";
 import { chartContextForTradition, dailyPriorFrame } from "@/lib/api/chart-context";
 import { VOICE_RULES } from "@/lib/voice";
 import { FORMAT_RULES } from "@/lib/format";
-import { tarotTools } from "@/lib/tools/tarot";
+import { makeSeededRng, makeDrawCardsTool } from "@/lib/tools/tarot";
 
-// Seeded PRNG — same question on same day always draws the same cards
-function seededRng(seed: string): () => number {
-  let h = 2166136261;
-  for (let i = 0; i < seed.length; i++) {
-    h = Math.imul(h ^ seed.charCodeAt(i), 16777619);
-  }
-  let state = h >>> 0;
-  return () => {
-    state += 0x6d2b79f5;
-    let z = state;
-    z = Math.imul(z ^ (z >>> 15), z | 1);
-    z ^= z + Math.imul(z ^ (z >>> 7), z | 61);
-    return ((z ^ (z >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-async function drawQuestionCards(date: string, question: string) {
-  const seed = `${date}:${question}`;
-  const rng = seededRng(seed);
-  const original = Math.random;
-  Math.random = rng;
-  try {
-    return await tarotTools.drawCards.execute!({ spread: "three-card", question }, {} as never);
-  } finally {
-    Math.random = original;
-  }
+// Daily tarot: seeded by date+question so the daily reading is stable.
+// Council (chat): seeded by date+question+userId so each user gets unique cards
+// but the same user asking the same question on the same day gets the same draw
+// (safe to cache), while two users never share a seed.
+async function drawQuestionCards(date: string, question: string, userId?: string) {
+  const seed = userId ? `${userId}:${date}:${question}` : `${date}:${question}`;
+  const rng = makeSeededRng(seed);
+  const drawTool = makeDrawCardsTool(rng);
+  return drawTool.execute!({ spread: "three-card", question }, {} as never);
 }
 
 export const maxDuration = 90;
@@ -52,11 +35,12 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return Response.json({ error: parsed.error.flatten() }, { status: 400 });
   }
-  const { birthData, date, question, chart, dailyReading } = parsed.data;
+  const { birthData, date, question, chart, dailyReading, userId } = parsed.data;
   const userMessage = `${question}\n\nToday's date: ${date}`;
 
-  // Pre-draw question-seeded tarot cards for Madame Crow
-  const questionCards = await drawQuestionCards(date, question);
+  // Pre-draw tarot cards: seeded per (userId, date, question) — concurrency-safe,
+  // same user/day/question always draws the same cards, different users don't share seeds.
+  const questionCards = await drawQuestionCards(date, question, userId);
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
@@ -106,7 +90,12 @@ export async function POST(req: Request) {
       let oracle: unknown = undefined;
       if (successful.length > 0) {
         const expertOutputs = successful
-          .map((r) => `### ${r.expertName}\n${r.content.analysis}`)
+          .map((r) => {
+            const parts = [`### ${r.expertName}`];
+            if (r.content.facts) parts.push(`**Facts:** ${r.content.facts}`);
+            parts.push(r.content.analysis);
+            return parts.join("\n");
+          })
           .join("\n\n---\n\n");
         const priorFrame = dailyPriorFrame(dailyReading);
         const judgeSystemPrompt =

@@ -34,6 +34,7 @@ export const ContextInputSchema = z.object({
   birthData: BirthDataSchema.nullable().default(null),
   date: z.string().default(() => new Date().toLocaleDateString("en-CA")),
   chart: ChartPassthroughSchema.optional(),
+  userId: z.string().optional(),
 });
 
 export const QuestionInputSchema = ContextInputSchema.extend({

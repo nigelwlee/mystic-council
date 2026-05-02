@@ -129,11 +129,13 @@ export const vedicAstrologyTools = {
       }
 
       const moonSidereal = chart["Moon"]?.siderealLon ?? 0;
-      const nakshatraSpan = 360 / 27;
+      const nakshatraSpan = 360 / 27; // 13.333...°
       const nakIdx = Math.floor(moonSidereal / nakshatraSpan);
       const nakshatra = NAKSHATRAS[nakIdx] ?? NAKSHATRAS[0]!;
       const degreeInNak = moonSidereal % nakshatraSpan;
       const fractionElapsed = degreeInNak / nakshatraSpan;
+      // Pada: each nakshatra has 4 quarters of 3°20' each
+      const pada = Math.min(4, Math.floor(degreeInNak / (nakshatraSpan / 4)) + 1);
       const ruler = nakshatra.ruler;
       const totalDasha = DASHA_YEARS[ruler] ?? 7;
       const yearsRemaining = totalDasha - fractionElapsed * totalDasha;
@@ -167,6 +169,7 @@ export const vedicAstrologyTools = {
           name: nakshatra.name,
           ruler: nakshatra.ruler,
           deity: nakshatra.deity,
+          pada,
           degreeInNakshatra: Math.round(degreeInNak * 10) / 10,
         },
         ayanamsa: Math.round(ayanamsa * 100) / 100,

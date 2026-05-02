@@ -3,7 +3,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { loadKnowledge } from "@/lib/knowledge/loader";
 import { formatBirthData, patchToolsWithBirthData, parseStructuredExpert } from "@/lib/orchestrator";
 import { EXPERT_ID_TO_TRADITION } from "@/lib/constants/traditions";
-import { VOICE_RULES } from "@/lib/voice";
+import { voiceRulesForTradition } from "@/lib/voice";
 import { FORMAT_RULES, sanitizeField } from "@/lib/format";
 import type { BirthData, ExpertConfig } from "@/lib/experts/types";
 import type { ExpertReading } from "@/lib/api/schemas";
@@ -31,28 +31,35 @@ export async function runSingleExpert(
 ): Promise<ExpertReading & { durationMs: number }> {
   const knowledge = await loadKnowledge(expert.knowledgePath);
   const birthDataStr = formatBirthData(birthData);
-  const systemPrompt =
-    expert.systemPromptTemplate
-      .replace("{knowledge}", knowledge)
-      .replace("{birthData}", birthDataStr) +
-    "\n\n" + VOICE_RULES +
-    "\n\n" + FORMAT_RULES +
-    EXPERT_OUTPUT_RULES;
 
   const traditionId = EXPERT_ID_TO_TRADITION[expert.id];
   if (!traditionId) throw new Error(`Unknown expertId: ${expert.id}`);
 
+  const systemPrompt =
+    expert.systemPromptTemplate
+      .replace("{knowledge}", knowledge)
+      .replace("{birthData}", birthDataStr) +
+    "\n\n" + voiceRulesForTradition(traditionId) +
+    "\n\n" + FORMAT_RULES +
+    EXPERT_OUTPUT_RULES;
+
   const finalUserMessage = chartContext ? `${chartContext}${userMessage}` : userMessage;
 
   const start = Date.now();
+  const EXPERT_TIMEOUT_MS = 60_000;
   try {
-    const result = await generateText({
-      model: openrouter(expert.model),
-      system: systemPrompt,
-      messages: [{ role: "user", content: finalUserMessage }],
-      tools: patchToolsWithBirthData(expert.tools, birthData),
-      maxSteps: 2,
-    });
+    const result = await Promise.race([
+      generateText({
+        model: openrouter(expert.model),
+        system: systemPrompt,
+        messages: [{ role: "user", content: finalUserMessage }],
+        tools: patchToolsWithBirthData(expert.tools, birthData),
+        maxSteps: 2,
+      }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`Expert ${expert.id} timed out after ${EXPERT_TIMEOUT_MS}ms`)), EXPERT_TIMEOUT_MS),
+      ),
+    ]);
 
     const structured = parseStructuredExpert(result.text);
     return {

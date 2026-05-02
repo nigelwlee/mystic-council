@@ -67,7 +67,12 @@ export async function POST(req: Request) {
       let oracle: unknown = undefined;
       if (successful.length > 0) {
         const expertOutputs = successful
-          .map((r) => `### ${r.expertName}\n${r.content.summary}`)
+          .map((r) => {
+            const parts = [`### ${r.expertName}`];
+            if (r.content.facts) parts.push(`**Facts:** ${r.content.facts}`);
+            parts.push(r.content.analysis);
+            return parts.join("\n");
+          })
           .join("\n\n---\n\n");
         const judgeSystemPrompt = judgeConfig.systemPromptTemplate.replace("{expertOutputs}", expertOutputs) + "\n\n" + VOICE_RULES + "\n\n" + FORMAT_RULES;
         emit({ type: "oracle-start" });
