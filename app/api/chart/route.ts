@@ -2,48 +2,41 @@ import { westernAstrologyTools } from "@/lib/tools/astrology";
 import { chineseAstrologyTools } from "@/lib/tools/chinese";
 import { vedicAstrologyTools } from "@/lib/tools/vedic";
 import { numerologyTools } from "@/lib/tools/numerology";
-import { tarotTools } from "@/lib/tools/tarot";
+import { makeSeededRng, makeDrawCardsTool } from "@/lib/tools/tarot";
 import { ContextInputSchema } from "@/lib/api/schemas";
 import type { ChartData } from "@/lib/api/schemas";
 
 export const maxDuration = 15;
 
-// Seeded PRNG (mulberry32) — produces stable tarot draws for a given date string
-function seededRng(seed: string): () => number {
-  let h = 2166136261;
-  for (let i = 0; i < seed.length; i++) {
-    h = Math.imul(h ^ seed.charCodeAt(i), 16777619);
-  }
-  let state = h >>> 0;
-  return () => {
-    state += 0x6d2b79f5;
-    let z = state;
-    z = Math.imul(z ^ (z >>> 15), z | 1);
-    z ^= z + Math.imul(z ^ (z >>> 7), z | 61);
-    return ((z ^ (z >>> 14)) >>> 0) / 4294967296;
-  };
-}
+// In-process chart cache: key = (birthData + date), TTL = 24h.
+// Reset on cold start. Drop-in replaceable with a DB cache layer when ready.
+const chartCache = new Map<string, { data: ChartData; expiresAt: number }>();
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
-// Temporarily patch Math.random with a seeded version during tarot draw
-async function drawSeededCards(seed: string, spread: "three-card") {
-  const rng = seededRng(seed);
-  const original = Math.random;
-  Math.random = rng;
-  try {
-    return await tarotTools.drawCards.execute!({ spread, question: `Daily reading for ${seed}` }, {} as never);
-  } finally {
-    Math.random = original;
-  }
+// Concurrency-safe seeded daily tarot draw — uses makeSeededRng, not Math.random
+async function drawDailyCards(date: string, userId?: string) {
+  const seed = userId ? `${userId}:daily:${date}` : `daily:${date}`;
+  const rng = makeSeededRng(seed);
+  const drawTool = makeDrawCardsTool(rng);
+  return drawTool.execute!({ spread: "three-card", question: `Daily reading for ${date}` }, {} as never);
 }
 
 export async function POST(req: Request) {
-  const body = await req.json();
+  const body = await req.json() as unknown;
   const parsed = ContextInputSchema.safeParse(body);
   if (!parsed.success) {
     return Response.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { birthData, date } = parsed.data;
+  const { birthData, date, userId } = parsed.data;
+
+  // Cache check — same birth data + date within 24h returns instantly
+  const cacheKey = JSON.stringify({ birthData, date });
+  const cached = chartCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return Response.json(cached.data);
+  }
+
   const bd = birthData ?? {};
   const start = Date.now();
 
@@ -87,7 +80,7 @@ export async function POST(req: Request) {
 
     westernAstrologyTools.calculateTransitsForDate.execute!({ date }, {} as never),
 
-    drawSeededCards(date, "three-card"),
+    drawDailyCards(date, userId),
   ]);
 
   const result: ChartData = {
@@ -113,5 +106,6 @@ export async function POST(req: Request) {
     totalDurationMs: Date.now() - start,
   };
 
+  chartCache.set(cacheKey, { data: result, expiresAt: Date.now() + CACHE_TTL_MS });
   return Response.json(result);
 }

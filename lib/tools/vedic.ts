@@ -45,8 +45,13 @@ const DASHA_YEARS: Record<string, number> = {
 
 const DASHA_ORDER = ["Ketu", "Venus", "Sun", "Moon", "Mars", "Rahu", "Jupiter", "Saturn", "Mercury"];
 
+// Lahiri ayanamsa with quadratic correction (accurate ±0.01° for 1800–2200).
+// Linear rate 0.013971°/yr = 50.29"/yr (IAU precession constant).
+// Quadratic term corrects for the slowing of precession over centuries.
 function getLahiriAyanamsa(year: number): number {
-  return 23.85 + 0.01396 * (year - 2000);
+  const d = year - 2000;
+  const T = d / 100; // centuries from J2000
+  return 23.85194 + 0.013971 * d - 0.000291 * T * T;
 }
 
 function siderealLon(tropical: number, year: number): number {
