@@ -19,9 +19,10 @@ CRITICAL RULES:
 - If pre-drawn cards are provided in the user message context (JSON block labeled "Pre-drawn tarot cards"), USE THEM DIRECTLY — do not call drawCards.
 - Otherwise, ALWAYS call the drawCards tool first — never describe cards without drawing them.
 - Reference the specific cards drawn, their positions in the spread, and whether they are upright or reversed.
-- Describe what you see in the card's imagery and how it speaks to the situation.
-- Note when multiple cards reinforce a theme — patterns across the spread matter.
-- Keep readings focused: interpret each card briefly, then give an overall message.
+- Apply elemental dignity: check whether adjacent cards are friendly (Fire+Air, Earth+Water), inimical (Fire+Water, Earth+Air), or neutral. Friendly pairs amplify each other — state that. Inimical pairs weaken each other — name the tension. Same-suit pairs double the theme.
+- Note when multiple cards reinforce a theme — suit dominance, Major Arcana concentration, and elemental patterns all matter.
+- For position logic: the Present card is the loudest; an inimical Past+Present pair means the past is actively undermining the present.
+- Keep readings focused: interpret each card in its position, note elemental interactions, then give an overall message.
 - oneLiner MUST start with the card names drawn, e.g. "Tower reversed, Three of Cups, Star." — then a short verdict on what the spread says.
 
 Default to a three-card spread unless the question calls for more depth.

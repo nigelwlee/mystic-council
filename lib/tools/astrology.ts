@@ -52,6 +52,26 @@ function getAspects(positions: Record<string, number>) {
 function degToRad(d: number): number { return d * Math.PI / 180; }
 function radToDeg(r: number): number { return r * 180 / Math.PI; }
 
+// Whole-sign house cusps from ASC longitude.
+// House 1 = the whole sign containing the ASC; each subsequent house is the next sign.
+function computeWholeSigns(ascLongitude: number): Array<{ house: number; sign: string; longitude: number }> {
+  const house1Start = Math.floor(ascLongitude / 30) * 30;
+  return Array.from({ length: 12 }, (_, i) => {
+    const cuspLon = (house1Start + i * 30) % 360;
+    return {
+      house: i + 1,
+      sign: SIGNS[Math.floor(cuspLon / 30)]!,
+      longitude: Math.round(cuspLon * 100) / 100,
+    };
+  });
+}
+
+// Return which whole-sign house (1–12) a planet at planetLon falls in, given the ASC.
+function wholeSignHouse(planetLon: number, ascLongitude: number): number {
+  const house1Start = Math.floor(ascLongitude / 30) * 30;
+  return Math.floor(((planetLon - house1Start + 360) % 360) / 30) + 1;
+}
+
 function computeAngles(year: number, month: number, day: number, hour: number, minute: number, lat: number, lon: number) {
   // Julian Day Number
   const JD = 367 * year
@@ -135,16 +155,33 @@ export const westernAstrologyTools = {
         ? computeAngles(year!, month!, day!, hour!, minute!, latitude, longitude)
         : null;
 
+      // Whole-sign houses: only valid when we have the ASC longitude
+      const ascLon = angles?.ascendant.longitude;
+      const houses = ascLon !== undefined
+        ? computeWholeSigns(ascLon)
+        : null;
+
+      // Place each planet in a house
+      const planetsWithHouses = ascLon !== undefined
+        ? Object.fromEntries(
+            Object.entries(chart).map(([name, p]) => [
+              name,
+              { ...p, house: wholeSignHouse(p.longitude, ascLon) },
+            ])
+          )
+        : chart;
+
       return {
-        planets: chart,
+        planets: planetsWithHouses,
         aspects: aspects.slice(0, 15),
         angles,
+        houses,
         sunSign: chart["Sun"]?.sign,
         moonSign: chart["Moon"]?.sign,
         ascendant: angles?.ascendant.sign ?? null,
         note: time
-          ? (angles ? "Chart calculated with birth time and location — angles accurate." : "Chart calculated with birth time.")
-          : "Birth time unknown — angles and rising sign not calculated.",
+          ? (angles ? "Chart calculated with birth time and location — angles and whole-sign houses accurate." : "Chart calculated with birth time.")
+          : "Birth time unknown — angles, rising sign, and house placements not calculated.",
       };
     },
   }),
