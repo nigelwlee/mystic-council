@@ -8,6 +8,52 @@ const BRANCH_ANIMALS = ["Rat", "Ox", "Tiger", "Rabbit", "Dragon", "Snake", "Hors
 const STEM_ELEMENTS = ["Wood", "Wood", "Fire", "Fire", "Earth", "Earth", "Metal", "Metal", "Water", "Water"];
 const STEM_POLARITY = ["Yang", "Yin", "Yang", "Yin", "Yang", "Yin", "Yang", "Yin", "Yang", "Yin"];
 
+// Traditional hidden stems (cang gan) inside each earthly branch
+// Format: [main hidden stem, ...secondary stems]
+const BRANCH_HIDDEN_STEMS: Record<string, string[]> = {
+  "Zǐ":  ["Guǐ"],
+  "Chǒu": ["Jǐ", "Guǐ", "Xīn"],
+  "Yín":  ["Jiǎ", "Bǐng", "Wù"],
+  "Mǎo":  ["Yǐ"],
+  "Chén": ["Wù", "Yǐ", "Guǐ"],
+  "Sì":   ["Bǐng", "Gēng", "Wù"],
+  "Wǔ":   ["Dīng", "Jǐ"],
+  "Wèi":  ["Jǐ", "Dīng", "Yǐ"],
+  "Shēn": ["Gēng", "Rén", "Wù"],
+  "Yǒu":  ["Xīn"],
+  "Xū":   ["Wù", "Xīn", "Dīng"],
+  "Hài":  ["Rén", "Jiǎ"],
+};
+
+// The 6 earthly branch clashes (index pairs)
+const BRANCH_CLASHES: [number, number][] = [
+  [0, 6],   // Zǐ–Wǔ  (Water–Fire)
+  [1, 7],   // Chǒu–Wèi (Earth–Earth)
+  [2, 8],   // Yín–Shēn (Wood–Metal)
+  [3, 9],   // Mǎo–Yǒu (Wood–Metal)
+  [4, 10],  // Chén–Xū (Earth–Earth)
+  [5, 11],  // Sì–Hài  (Fire–Water)
+];
+
+function detectClashes(birthBranches: string[], todayBranches: string[]): string[] {
+  const clashes: string[] = [];
+  for (const birthBranch of birthBranches) {
+    const bi = BRANCHES.indexOf(birthBranch);
+    if (bi < 0) continue;
+    for (const todayBranch of todayBranches) {
+      const ti = BRANCHES.indexOf(todayBranch);
+      if (ti < 0) continue;
+      const isClash = BRANCH_CLASHES.some(
+        ([a, b]) => (a === bi && b === ti) || (b === bi && a === ti),
+      );
+      if (isClash) {
+        clashes.push(`${birthBranch} (birth) clashes with ${todayBranch} (today)`);
+      }
+    }
+  }
+  return clashes;
+}
+
 // What each element needs to be productive
 const ELEMENT_INTERACTIONS: Record<string, { generates: string; controls: string }> = {
   Wood: { generates: "Fire", controls: "Earth" },
@@ -117,6 +163,22 @@ export const chineseAstrologyTools = {
 
       const prevJieQi = lunar.getPrevJieQi();
 
+      // Hidden stems for each birth pillar
+      const hiddenStems = {
+        year: BRANCH_HIDDEN_STEMS[yearPillar.branch] ?? [],
+        month: BRANCH_HIDDEN_STEMS[monthBranch] ?? [],
+        day: BRANCH_HIDDEN_STEMS[dayBranch] ?? [],
+        hour: hourPillar ? (BRANCH_HIDDEN_STEMS[hourPillar.branch] ?? []) : [],
+      };
+
+      // Clash detection between birth branches and today's branches
+      const birthBranches = [yearPillar.branch, monthBranch, dayBranch];
+      if (hourPillar) birthBranches.push(hourPillar.branch);
+      const todayBranches = currentPillars
+        ? [currentPillars.year.branch, currentPillars.month.branch]
+        : [];
+      const clashesToday = detectClashes(birthBranches, todayBranches);
+
       return {
         zodiacAnimal: yearPillar.animal,
         element: yearPillar.element,
@@ -141,6 +203,8 @@ export const chineseAstrologyTools = {
         dominantElement,
         solarTerm: prevJieQi ? prevJieQi.getName() : "N/A",
         currentPillars,
+        hiddenStems,
+        clashesToday: clashesToday.length > 0 ? clashesToday : null,
       };
     },
   }),
