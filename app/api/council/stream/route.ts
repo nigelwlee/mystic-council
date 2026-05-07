@@ -5,11 +5,12 @@ import { experts } from "@/lib/experts/registry";
 import { judgeChatConfig as judgeConfig } from "@/lib/experts/judge";
 import { runSingleExpert } from "@/lib/api/run-expert";
 import { EXPERT_ID_TO_TRADITION } from "@/lib/constants/traditions";
-import { QuestionInputSchema } from "@/lib/api/schemas";
+import { QuestionInputSchema, CouncilReadingSchema } from "@/lib/api/schemas";
 import { chartContextForTradition, dailyPriorFrame } from "@/lib/api/chart-context";
 import { VOICE_RULES } from "@/lib/voice";
 import { FORMAT_RULES } from "@/lib/format";
 import { makeSeededRng, makeDrawCardsTool } from "@/lib/tools/tarot";
+import { getPostHogClient } from "@/lib/posthog-server";
 
 // Daily tarot: seeded by date+question so the daily reading is stable.
 // Council (chat): seeded by date+question+userId so each user gets unique cards
@@ -64,9 +65,11 @@ export async function POST(req: Request) {
             ctx = (ctx ?? "") + cardCtx;
           }
           const result = await runSingleExpert(expert, userMessage, birthData, ctx);
+          console.log(JSON.stringify({ event: "expert_complete", endpoint: "council", expertId: expert.id, model: result.model, durationMs: result.durationMs, success: true }));
           emit({ type: "expert-complete", ...result });
           return result;
         } catch (err) {
+          console.log(JSON.stringify({ event: "expert_complete", endpoint: "council", expertId: expert.id, success: false, errorType: err instanceof Error ? err.constructor.name : "unknown" }));
           const tid = EXPERT_ID_TO_TRADITION[expert.id];
           const errResult = {
             traditionId: (tid ?? "western") as "western" | "chinese" | "vedic" | "tarot" | "numerology",
@@ -142,7 +145,7 @@ export async function POST(req: Request) {
         }
       }
 
-      emit({
+      const runComplete = {
         type: "run-complete",
         id: crypto.randomUUID(),
         generatedAt: new Date().toISOString(),
@@ -150,7 +153,28 @@ export async function POST(req: Request) {
         experts: expertReadings,
         oracle,
         totalDurationMs: Date.now() - runStart,
+      };
+
+      const schemaCheck = CouncilReadingSchema.safeParse(runComplete);
+      if (!schemaCheck.success) {
+        console.error("[council/stream] Response schema mismatch:", JSON.stringify(schemaCheck.error.flatten()));
+      }
+
+      const posthog = getPostHogClient();
+      const distinctId = userId ?? parsed.data.birthData?.name ?? "anonymous";
+      posthog.capture({
+        distinctId,
+        event: "council_request_completed",
+        properties: {
+          expertCount: expertReadings.length,
+          failedExperts: expertReadings.filter((r) => r.error).length,
+          oracleSuccess: !!oracle,
+          totalDurationMs: runComplete.totalDurationMs,
+          date,
+        },
       });
+
+      emit(runComplete);
       controller.close();
     },
   });

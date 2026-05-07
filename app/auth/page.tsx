@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { usePostHog } from "posthog-js/react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,6 +10,7 @@ import { Label } from "@/components/ui/label";
 
 export default function AuthPage() {
   const router = useRouter();
+  const posthog = usePostHog();
   const [mode, setMode] = useState<"signin" | "signup">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -26,13 +28,17 @@ export default function AuthPage() {
       if (mode === "signup") {
         const { error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
+        posthog?.capture("user_signed_up", { email });
         // On sign up, show confirmation message or redirect
         setError("Check your email to confirm your account, then sign in.");
         setLoading(false);
         return;
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { data, error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
+        const userId = data.user?.id;
+        posthog?.identify(userId ?? email, { email });
+        posthog?.capture("user_signed_in", { email });
       }
 
       router.push("/daily");

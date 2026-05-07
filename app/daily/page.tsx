@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { usePostHog } from "posthog-js/react";
 import { useProtoStore, type ProtoExpertReading, type ProtoOracle, type ProtoDailyCache } from "@/lib/hooks/use-proto-store";
 import { runSse } from "@/lib/api/sse";
 
@@ -34,7 +35,7 @@ function formatDate(d: string): string {
   });
 }
 
-function ExpertRow({ expert }: { expert: ProtoExpertReading }) {
+function ExpertRow({ expert, onExpand }: { expert: ProtoExpertReading; onExpand?: (expertId: string) => void }) {
   const [open, setOpen] = useState(false);
   const meta = TRADITION_LABEL[expert.expertId] ?? { label: expert.expertName, symbol: expert.expertEmoji };
   const content = typeof expert.content === "object" && expert.content !== null ? expert.content : null;
@@ -50,7 +51,11 @@ function ExpertRow({ expert }: { expert: ProtoExpertReading }) {
       }}
     >
       <button
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          const next = !open;
+          setOpen(next);
+          if (next) onExpand?.(expert.expertId);
+        }}
         style={{
           display: "flex",
           alignItems: "flex-start",
@@ -147,6 +152,7 @@ export default function DailyPage() {
   const router = useRouter();
   const { store, ready, saveCache, clearCache } = useProtoStore();
   const streak = store.streak;
+  const posthog = usePostHog();
 
   const date = today();
   const [phase, setPhase] = useState<"idle" | "chart" | "daily" | "done" | "error">("idle");
@@ -254,6 +260,18 @@ export default function DailyPage() {
       },
     };
     saveCache(date, cacheEntry);
+
+    liveExperts.filter((e) => e.error).forEach((e) => {
+      posthog?.capture("expert_failed", { expertId: e.expertId, error: e.error, endpoint: "daily" });
+    });
+    posthog?.capture("daily_reading_generated", {
+      expertCount: liveExperts.length,
+      failedExperts: liveExperts.filter((e) => e.error).length,
+      oracleSuccess: !!liveOracle,
+      totalDurationMs: Date.now() - (liveExperts[0] ? Date.now() : 0),
+      date,
+    });
+
     setPhase("done");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date, store.cache, saveCache]);
@@ -271,6 +289,7 @@ export default function DailyPage() {
   }, [ready]);
 
   const handleRefresh = () => {
+    posthog?.capture("daily_reading_refreshed", { date });
     clearCache(date);
     setPhase("idle");
     void runFetch(store.birthData, true);
@@ -405,7 +424,13 @@ export default function DailyPage() {
           {loading && experts.length === 0 ? (
             <Skeleton />
           ) : (
-            experts.map((e) => <ExpertRow key={e.expertId} expert={e} />)
+            experts.map((e) => (
+              <ExpertRow
+                key={e.expertId}
+                expert={e}
+                onExpand={(expertId) => posthog?.capture("expert_expanded", { expertId, endpoint: "daily" })}
+              />
+            ))
           )}
         </div>
       )}

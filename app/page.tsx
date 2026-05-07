@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { usePostHog } from "posthog-js/react";
 import { useGeocode } from "@/lib/hooks/use-geocode";
 import { useProtoStore, type ProtoBirthData } from "@/lib/hooks/use-proto-store";
 
@@ -64,6 +65,7 @@ const EMPTY_FORM: FormState = { name: "", date: "", time: "", location: "", lat:
 
 export default function InputsPage() {
   const router = useRouter();
+  const posthog = usePostHog();
   const { store, ready, saveBirthData } = useProtoStore();
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
 
@@ -106,6 +108,7 @@ export default function InputsPage() {
       longitude: form.lon!,
     };
     saveBirthData(bd);
+    posthog?.capture("birth_data_submitted", { location: bd.location, hasName: !!bd.name });
     router.push("/daily");
   };
 
