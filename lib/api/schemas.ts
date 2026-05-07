@@ -43,6 +43,16 @@ export const QuestionInputSchema = ContextInputSchema.extend({
   dailyReading: DailyReadingPassthroughSchema.optional(),
 });
 
+// ─── Shared enums ────────────────────────────────────────────────────────────
+
+export const TraditionIdSchema = z.enum([
+  "western",
+  "chinese",
+  "vedic",
+  "tarot",
+  "numerology",
+]);
+
 // ─── Expert output ────────────────────────────────────────────────────────────
 
 export const ExpertContentSchema = z.object({
@@ -59,7 +69,7 @@ export const TokenUsageSchema = z.object({
 });
 
 export const ExpertReadingSchema = z.object({
-  traditionId: z.enum(["western", "chinese", "vedic", "tarot", "numerology"]),
+  traditionId: TraditionIdSchema,
   expertId: z.string(),
   expertName: z.string(),
   expertEmoji: z.string(),
@@ -150,6 +160,7 @@ export const ChartDataSchema = z.object({
 
 // ─── Inferred types ───────────────────────────────────────────────────────────
 
+export type TraditionId = z.infer<typeof TraditionIdSchema>;
 export type TokenUsage = z.infer<typeof TokenUsageSchema>;
 export type ExpertExcerpts = z.infer<typeof ExpertExcerptsSchema>;
 export type Digest = z.infer<typeof DigestSchema>;
