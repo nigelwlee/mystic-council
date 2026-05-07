@@ -146,6 +146,7 @@ function Skeleton() {
 export default function DailyPage() {
   const router = useRouter();
   const { store, ready, saveCache, clearCache } = useProtoStore();
+  const streak = store.streak;
 
   const date = today();
   const [phase, setPhase] = useState<"idle" | "chart" | "daily" | "done" | "error">("idle");
@@ -314,17 +315,31 @@ export default function DailyPage() {
         >
           ← Edit
         </button>
-        <span
-          style={{
-            fontSize: 11,
-            letterSpacing: "0.14em",
-            textTransform: "uppercase",
-            color: MUTED,
-            fontFamily: "var(--font-geist-mono), monospace",
-          }}
-        >
-          {formatDate(date)}
-        </span>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+          <span
+            style={{
+              fontSize: 11,
+              letterSpacing: "0.14em",
+              textTransform: "uppercase",
+              color: MUTED,
+              fontFamily: "var(--font-geist-mono), monospace",
+            }}
+          >
+            {formatDate(date)}
+          </span>
+          {streak && streak.current > 0 && (
+            <span
+              style={{
+                fontSize: 10,
+                color: ACCENT_DIM,
+                fontFamily: "var(--font-geist-mono), monospace",
+                letterSpacing: "0.08em",
+              }}
+            >
+              {streak.current} day streak
+            </span>
+          )}
+        </div>
         <button
           onClick={handleRefresh}
           disabled={loading}
