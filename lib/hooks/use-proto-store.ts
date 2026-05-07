@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 const STORE_KEY = "mc:proto:v1";
 
@@ -84,6 +85,10 @@ function save(store: ProtoStore) {
   }
 }
 
+function todayStr(): string {
+  return new Date().toLocaleDateString("en-CA");
+}
+
 export function useProtoStore() {
   const [store, setStoreState] = useState<ProtoStore>(() => ({
     userId: "",
@@ -96,7 +101,65 @@ export function useProtoStore() {
   useEffect(() => {
     const loaded = load();
     setStoreState(loaded);
-    setReady(true);
+
+    // Supabase hydration: if authenticated, fetch birth_data and today's reading
+    const supabase = createClient();
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session?.user) {
+        setReady(true);
+        return;
+      }
+      const userId = session.user.id;
+
+      Promise.all([
+        // Fetch birth data from Supabase
+        supabase
+          .from("birth_data")
+          .select("name, birthdate, birthtime, birthplace, latitude, longitude")
+          .eq("user_id", userId)
+          .maybeSingle(),
+        // Fetch today's reading from Supabase
+        supabase
+          .from("readings")
+          .select("output")
+          .eq("user_id", userId)
+          .eq("kind", "daily")
+          .eq("reading_date", todayStr())
+          .maybeSingle(),
+      ]).then(([bdResult, readingResult]) => {
+        setStoreState((prev) => {
+          let next = { ...prev };
+
+          // Override birth data from Supabase if present
+          if (bdResult.data) {
+            const row = bdResult.data;
+            const bd: ProtoBirthData = {
+              name: row.name ?? "",
+              date: row.birthdate ?? "",
+              time: row.birthtime ?? "",
+              location: row.birthplace ?? "",
+              latitude: typeof row.latitude === "number" ? row.latitude : 0,
+              longitude: typeof row.longitude === "number" ? row.longitude : 0,
+            };
+            next = { ...next, birthData: bd };
+          }
+
+          // Override today's cache from Supabase if present
+          if (readingResult.data?.output) {
+            const output = readingResult.data.output as ProtoDailyCache;
+            next = { ...next, cache: { ...next.cache, [todayStr()]: output } };
+          }
+
+          save(next);
+          return next;
+        });
+        setReady(true);
+      }).catch(() => {
+        setReady(true);
+      });
+    }).catch(() => {
+      setReady(true);
+    });
   }, []);
 
   const setStore = useCallback((updater: (s: ProtoStore) => ProtoStore) => {
@@ -108,13 +171,73 @@ export function useProtoStore() {
   }, []);
 
   const saveBirthData = useCallback(
-    (bd: ProtoBirthData) => setStore((s) => ({ ...s, birthData: bd })),
+    (bd: ProtoBirthData) => {
+      setStore((s) => ({ ...s, birthData: bd }));
+
+      // Upsert to Supabase if authenticated
+      const supabase = createClient();
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (!session?.user) return;
+        supabase
+          .from("birth_data")
+          .upsert(
+            {
+              user_id: session.user.id,
+              name: bd.name,
+              birthdate: bd.date,
+              birthtime: bd.time,
+              birthplace: bd.location,
+              latitude: bd.latitude,
+              longitude: bd.longitude,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "user_id" }
+          )
+          .then(({ error }) => {
+            if (error) console.error("[ProtoStore] birth_data upsert error:", error.message);
+          });
+      }).catch(() => {});
+    },
     [setStore],
   );
 
   const saveCache = useCallback(
-    (date: string, data: ProtoDailyCache) =>
-      setStore((s) => ({ ...s, cache: { ...s.cache, [date]: data } })),
+    (date: string, data: ProtoDailyCache) => {
+      setStore((s) => ({ ...s, cache: { ...s.cache, [date]: data } }));
+
+      // Upsert to Supabase if authenticated
+      const supabase = createClient();
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (!session?.user) return;
+        // Get birth data from store for input field
+        const storeRaw = localStorage.getItem(STORE_KEY);
+        let birthData: ProtoBirthData | null = null;
+        try {
+          if (storeRaw) {
+            const parsed = JSON.parse(storeRaw) as Partial<ProtoStore>;
+            birthData = parsed.birthData ?? null;
+          }
+        } catch {
+          // ignore
+        }
+        supabase
+          .from("readings")
+          .upsert(
+            {
+              user_id: session.user.id,
+              kind: "daily",
+              reading_date: date,
+              input: { birthData, date },
+              output: data,
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "user_id,kind,reading_date" }
+          )
+          .then(({ error }) => {
+            if (error) console.error("[ProtoStore] readings upsert error:", error.message);
+          });
+      }).catch(() => {});
+    },
     [setStore],
   );
 

@@ -1,7 +1,6 @@
 "use client";
 
-import { useBirthData } from "@/lib/context/birth-data-context";
-import { useEffect } from "react";
+import { useState } from "react";
 
 const DEFAULTS = {
   name: "Nigel Lee",
@@ -18,19 +17,10 @@ const FUTURE_SOURCES = [
 ];
 
 export function BaseDataPanel() {
-  const { birthData, setBirthData } = useBirthData();
-
-  // Set defaults on mount if empty
-  useEffect(() => {
-    if (!birthData?.name && !birthData?.date) {
-      setBirthData(DEFAULTS);
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const data = birthData ?? DEFAULTS;
+  const [data, setData] = useState(DEFAULTS);
 
   const update = (field: string, value: string) => {
-    setBirthData({ ...data, [field]: value });
+    setData((prev) => ({ ...prev, [field]: value }));
   };
 
   return (
@@ -40,10 +30,10 @@ export function BaseDataPanel() {
       </div>
 
       <div className="space-y-2">
-        <Field label="Name" value={data.name ?? ""} onChange={(v) => update("name", v)} />
-        <Field label="Birth date" value={data.date ?? ""} onChange={(v) => update("date", v)} type="date" />
-        <Field label="Birth time" value={data.time ?? ""} onChange={(v) => update("time", v)} type="time" />
-        <Field label="Location" value={data.location ?? ""} onChange={(v) => update("location", v)} />
+        <Field label="Name" value={data.name} onChange={(v) => update("name", v)} />
+        <Field label="Birth date" value={data.date} onChange={(v) => update("date", v)} type="date" />
+        <Field label="Birth time" value={data.time} onChange={(v) => update("time", v)} type="time" />
+        <Field label="Location" value={data.location} onChange={(v) => update("location", v)} />
       </div>
 
       <div className="border-t border-neutral-800 pt-3 space-y-1.5">

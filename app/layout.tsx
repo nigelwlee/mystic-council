@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Instrument_Serif, Cormorant_Garamond } from "next/font/google";
 import "./globals.css";
-import { BirthDataProvider } from "@/lib/context/birth-data-context";
 import { AuthNav } from "@/components/auth/auth-nav";
 
 const geist = Geist({
@@ -41,11 +40,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${geist.variable} ${instrumentSerif.variable} ${cormorantGaramond.variable} h-full dark`}>
-      <body className="min-h-full antialiased">
-        <BirthDataProvider>
-          <AuthNav />
-          {children}
-        </BirthDataProvider>
+      <body className="min-h-full antialiased" style={{ backgroundColor: "#0A0B14", color: "#F5F0E8" }}>
+        <AuthNav />
+        {children}
       </body>
     </html>
   );

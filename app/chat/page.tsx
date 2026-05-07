@@ -1,619 +1,712 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useChat } from "ai/react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { useBirthData } from "@/lib/context/birth-data-context";
-import { LoomBar, type WeftThread } from "@/components/loom/LoomBar";
-import { TapestryBackground } from "@/components/loom/TapestryBackground";
-import { ExpertCard } from "@/components/council/ExpertCard";
-import { OracleSection } from "@/components/council/OracleSection";
-import { Nav } from "@/components/shared/Nav";
-import { ContentColumn } from "@/components/shared/ContentColumn";
-import { TRADITION_COLORS, EXPERT_ID_TO_TRADITION, TRADITIONS, type TraditionId } from "@/lib/constants/traditions";
-import type { CouncilStreamData, JudgeVerdictData, ExpertResponse } from "@/lib/experts/types";
-import type { JSONValue } from "ai";
-import { useReadings } from "@/lib/hooks/use-readings";
+import { useProtoStore, type ProtoExpertReading, type ProtoOracle, type ProtoChatEntry } from "@/lib/hooks/use-proto-store";
+import { runSse } from "@/lib/api/sse";
 
 const BG = "#0A0B14";
 const TEXT = "#F5F0E8";
+const MUTED = "rgba(245,240,232,0.35)";
+const BORDER = "rgba(245,240,232,0.08)";
+const ACCENT = "rgba(191,168,130,1)";
+const ACCENT_DIM = "rgba(191,168,130,0.12)";
+const USER_BG = "rgba(245,240,232,0.06)";
 
-const QUESTION_PROMPTS = [
-  "What is asking to be released?",
-  "Where am I resisting my own pattern?",
-  "What does this season want from me?",
-  "What thread am I refusing to follow?",
+const TRADITION_LABEL: Record<string, string> = {
+  western:    "Astrology (Stella)",
+  vedic:      "Vedic (Priya)",
+  chinese:    "Chinese (Master Wei)",
+  tarot:      "Tarot (Madame Crow)",
+  numerology: "Numerology (Pythia)",
+};
+
+const SUGGESTED_PROMPTS = [
+  // Decisions
+  "Should I take the new job?",
+  "Is now the right time to move?",
+  "Should I reach out to them?",
+  "Do I say yes to this opportunity?",
+  "Should I end this relationship?",
+  "Is this the right time to start my business?",
+  "Should I speak up or stay quiet?",
+  "Do I push forward or step back right now?",
+  "Should I make the investment?",
+  "Is it time to quit?",
+  // Timing
+  "When will things settle down?",
+  "Is this week good for big moves?",
+  "Am I moving too fast?",
+  "How long until I see results?",
+  "Is this the right season for change?",
+  "Should I wait or act now?",
+  "When is the right time to have that conversation?",
+  "Are things about to shift for me?",
+  // Love & relationships
+  "Are we right for each other?",
+  "Should I tell them how I feel?",
+  "Why do I keep attracting the same kind of person?",
+  "Will this relationship get better?",
+  "Am I holding on too long?",
+  "Is this the love I deserve?",
+  "Why does it feel so hard right now?",
+  "Should I give them another chance?",
+  // Work & money
+  "Will this project pay off?",
+  "Should I push for the raise?",
+  "Am I in the right career?",
+  "Is this financial risk worth it?",
+  "Why is work feeling so draining lately?",
+  "Am I being overlooked or undervalued?",
+  "Should I take the partnership deal?",
+  "What does this week look like for business?",
+  // Self & direction
+  "What am I avoiding right now?",
+  "What am I missing about this week?",
+  "What is the real lesson this month?",
+  "What is blocking me?",
+  "Am I on the right path?",
+  "What do I need to let go of?",
+  "What is my energy like today?",
+  "What should I focus on this week?",
+  "Why do I keep sabotaging myself?",
+  "What does the universe want me to notice right now?",
+  // Family & friends
+  "How do I handle this conversation with my mom?",
+  "Should I set this boundary with my friend?",
+  "Why is this family dynamic so hard?",
+  "Am I being a good friend right now?",
+  "How do I navigate this conflict at home?",
+  "Is it time to reconnect with someone from my past?",
 ];
+
+function pickThree(exclude: string[] = []): string[] {
+  const pool = SUGGESTED_PROMPTS.filter((p) => !exclude.includes(p));
+  const source = pool.length >= 3 ? pool : SUGGESTED_PROMPTS;
+  const shuffled = [...source].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, 3);
+}
+
+const EXPERT_TRADITION: Record<string, string> = {
+  "stella":      "western",
+  "priya":       "vedic",
+  "master-wei":  "chinese",
+  "madame-crow": "tarot",
+  "pythia":      "numerology",
+};
+
+function today(): string {
+  return new Date().toLocaleDateString("en-CA");
+}
+
+function elapsedStr(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function ChimerAside({ expert }: { expert: ProtoExpertReading }) {
+  const [open, setOpen] = useState(false);
+  const trad = EXPERT_TRADITION[expert.expertId] ?? "";
+  const label = TRADITION_LABEL[trad] ?? expert.expertName;
+  const content = expert.content;
+  const oneLiner = content?.oneLiner ?? expert.error ?? "";
+  const summary = content?.summary ?? "";
+
+  return (
+    <div
+      style={{
+        marginTop: 8,
+        paddingLeft: 16,
+        borderLeft: `2px solid rgba(245,240,232,0.1)`,
+      }}
+    >
+      <button
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 8,
+          width: "100%",
+          background: "none",
+          border: "none",
+          cursor: "pointer",
+          padding: 0,
+          textAlign: "left",
+        }}
+      >
+        <span
+          style={{
+            fontSize: 11,
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+            color: MUTED,
+            fontFamily: "var(--font-geist-mono), monospace",
+            flexShrink: 0,
+            paddingTop: 1,
+            minWidth: 64,
+          }}
+        >
+          {label}
+        </span>
+        <span style={{ fontSize: 14, color: MUTED, lineHeight: 1.5, flex: 1 }}>{oneLiner}</span>
+        {summary && (
+          <span
+            style={{
+              fontSize: 11,
+              color: MUTED,
+              flexShrink: 0,
+              fontFamily: "var(--font-geist-mono), monospace",
+            }}
+          >
+            {open ? "▲" : "▼"}
+          </span>
+        )}
+      </button>
+      {open && summary && (
+        <div
+          style={{
+            marginTop: 8,
+            fontSize: 13,
+            color: MUTED,
+            lineHeight: 1.7,
+          }}
+        >
+          {summary}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TypingDots() {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 4,
+        padding: "12px 16px",
+      }}
+    >
+      {[0, 1, 2].map((i) => (
+        <span
+          key={i}
+          style={{
+            width: 6,
+            height: 6,
+            borderRadius: "50%",
+            backgroundColor: ACCENT,
+            display: "inline-block",
+            animation: `typingDot 1.2s ease-in-out ${i * 0.2}s infinite`,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+interface MessageEntry {
+  id: string;
+  type: "user" | "oracle";
+  q?: string;
+  oracle?: ProtoOracle | null;
+  experts?: ProtoExpertReading[];
+  error?: string;
+  ts: number;
+  durationMs?: number;
+}
+
+function buildMessages(history: ProtoChatEntry[]): MessageEntry[] {
+  return [...history].reverse().flatMap((entry) => [
+    { id: `${entry.id}-q`, type: "user" as const, q: entry.q, ts: entry.ts },
+    {
+      id: entry.id,
+      type: "oracle" as const,
+      oracle: entry.oracle,
+      experts: entry.experts,
+      error: entry.error,
+      ts: entry.ts,
+      durationMs: entry.durationMs,
+    },
+  ]);
+}
 
 export default function ChatPage() {
   const router = useRouter();
-  const { birthData } = useBirthData();
-  const [inputValue, setInputValue] = useState("");
+  const { store, ready, addChatEntry } = useProtoStore();
+  const [question, setQuestion] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [elapsed, setElapsed] = useState(0);
+  const startRef = useRef<number | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Expert responses + oracle
-  const [expertResponses, setExpertResponses] = useState<ExpertResponse[]>([]);
-  const [oracleContent, setOracleContent] = useState<{ summary: string; oneLiner: string } | null>(null);
+  // Streaming state
+  const [streamingQ, setStreamingQ] = useState<string | null>(null);
+  const [streamingOracle, setStreamingOracle] = useState<ProtoOracle | null>(null);
+  const [streamingExperts, setStreamingExperts] = useState<ProtoExpertReading[]>([]);
 
-  // Readings persistence
-  const { saveReading } = useReadings();
-  const hasSavedRef = useRef(false);
-
-  // LoomBar weft thread state
-  const [weftThreads, setWeftThreads] = useState<WeftThread[]>([]);
-
-  // Reading date — defaults to today, user can override for past/future readings
-  const [readingDate, setReadingDate] = useState(() => new Date().toLocaleDateString("en-CA"));
-
-  const { messages, setMessages, isLoading, data, append } = useChat({
-    api: "/api/chat",
-    body: { birthData, selectedExperts: [], date: readingDate },
-  });
-
-  // Parse stream data events
   useEffect(() => {
-    if (!data) return;
-    for (const item of data as JSONValue[]) {
-      const d = item as unknown as CouncilStreamData | JudgeVerdictData;
-      if (!d || typeof d !== "object" || !("type" in d)) continue;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSuggestions(pickThree());
+  }, []);
 
-      if (d.type === "expert-responses") {
-        setExpertResponses((prev) => {
-          const updated = [...prev];
-          for (const incoming of (d as CouncilStreamData).responses) {
-            const idx = updated.findIndex((r) => r.expertId === incoming.expertId);
-            if (idx >= 0) updated[idx] = incoming;
-            else updated.push(incoming);
-          }
-          return updated;
-        });
-
-        // Update LoomBar weft threads
-        for (const incoming of (d as CouncilStreamData).responses) {
-          const tradId = EXPERT_ID_TO_TRADITION[incoming.expertId];
-          if (tradId) {
-            setWeftThreads((prev) => {
-              const exists = prev.find((w) => w.id === tradId);
-              if (exists) return prev.map((w) => w.id === tradId ? { ...w, progress: 1 } : w);
-              return [...prev, {
-                id: tradId,
-                color: TRADITION_COLORS[tradId] + "99",
-                progress: 1,
-              }];
-            });
-          }
-        }
-      }
-
-      if (d.type === "judge-verdict") {
-        const verdict = (d as JudgeVerdictData).content;
-        setOracleContent(verdict);
-        // Add Oracle weft thread
-        setWeftThreads((prev) => {
-          if (prev.find((w) => w.id === "oracle")) return prev;
-          return [...prev, {
-            id: "oracle",
-            color: TRADITION_COLORS.oracle + "CC",
-            progress: 1,
-            isOracle: true,
-          }];
-        });
-      }
-    }
-  }, [data]);
-
-  // Reset on new loading cycle
   useEffect(() => {
-    if (isLoading) {
-      setExpertResponses([]);
-      setOracleContent(null);
-      setWeftThreads([]);
-      hasSavedRef.current = false;
-    }
-  }, [isLoading]);
+    if (!busy) return;
+    const id = setInterval(() => {
+      if (startRef.current) setElapsed(Date.now() - startRef.current);
+    }, 100);
+    return () => clearInterval(id);
+  }, [busy]);
 
-  // Auto-save reading when oracle finishes
-  useEffect(() => {
-    if (isLoading || !oracleContent || expertResponses.length === 0) return;
-    if (hasSavedRef.current) return;
-
-    const userMessages = messages.filter((m) => m.role === "user");
-    const question = userMessages.at(-1)?.content;
-    if (typeof question !== "string" || !question.trim()) return;
-
-    hasSavedRef.current = true;
-
-    const mappedResponses = expertResponses.map((r) => ({
-      traditionId: (EXPERT_ID_TO_TRADITION[r.expertId] ?? "western") as TraditionId,
-      expertName: r.expertName,
-      content: typeof r.content === "string"
-        ? { facts: "", analysis: r.content, summary: r.content, oneLiner: r.content }
-        : r.content,
-    }));
-
-    saveReading({
-      question: question.trim(),
-      expertResponses: mappedResponses,
-      oracleContent,
-      traditionsConsulted: mappedResponses.map((r) => r.traditionId),
-    });
-  }, [isLoading, oracleContent, expertResponses, messages, saveReading]);
-
-  // Scroll to bottom
+  // Scroll to bottom when messages change
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, expertResponses, oracleContent, isLoading]);
+  }, [store.chatHistory, streamingOracle, streamingQ]);
 
-  const onSubmit = (e?: React.FormEvent) => {
-    e?.preventDefault();
-    const trimmed = inputValue.trim();
-    if (!trimmed || isLoading) return;
-    append({ role: "user", content: trimmed });
-    setInputValue("");
+  const send = useCallback(async () => {
+    const q = question.trim();
+    if (!q || busy || !store.birthData) return;
+    setQuestion("");
+    setBusy(true);
+    setElapsed(0);
+    startRef.current = Date.now();
+
+    const cached = store.cache[today()];
+    const bd = store.birthData;
+
+    setStreamingQ(q);
+    setStreamingOracle(null);
+    setStreamingExperts([]);
+
+    const liveExperts: ProtoExpertReading[] = [];
+    let liveOracle: ProtoOracle | null = null;
+
+    try {
+      await runSse(
+        "/api/council/stream",
+        {
+          birthData: {
+            name: bd.name,
+            date: bd.date,
+            time: bd.time,
+            latitude: bd.latitude,
+            longitude: bd.longitude,
+            location: bd.location,
+          },
+          date: today(),
+          question: q,
+          ...(cached?.chart ? { chart: cached.chart } : {}),
+          ...(cached?.daily?.full ? { dailyReading: cached.daily.full } : {}),
+        },
+        (e) => {
+          const expert: ProtoExpertReading = {
+            expertId: String(e.expertId ?? ""),
+            expertName: String(e.expertName ?? ""),
+            expertEmoji: String(e.expertEmoji ?? ""),
+            color: String(e.color ?? ""),
+            content: e.content as ProtoExpertReading["content"],
+            error: e.error as string | undefined,
+          };
+          liveExperts.push(expert);
+          setStreamingExperts([...liveExperts]);
+        },
+        (o) => {
+          liveOracle = {
+            oneLiner: String((o as { oneLiner?: string }).oneLiner ?? ""),
+            summary: String((o as { summary?: string }).summary ?? ""),
+            chimers: Array.isArray((o as { chimers?: unknown }).chimers)
+              ? ((o as { chimers: unknown[] }).chimers as string[])
+              : [],
+          };
+          setStreamingOracle(liveOracle);
+        },
+      );
+
+      const durationMs = Date.now() - startRef.current!;
+      addChatEntry({
+        id: crypto.randomUUID(),
+        ts: startRef.current!,
+        durationMs,
+        q,
+        oracle: liveOracle,
+        experts: liveExperts,
+      });
+    } catch (e) {
+      const durationMs = Date.now() - (startRef.current ?? Date.now());
+      addChatEntry({
+        id: crypto.randomUUID(),
+        ts: startRef.current ?? Date.now(),
+        durationMs,
+        q,
+        oracle: liveOracle,
+        experts: liveExperts,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+
+    setStreamingQ(null);
+    setStreamingOracle(null);
+    setStreamingExperts([]);
+    setBusy(false);
+    startRef.current = null;
+  }, [question, busy, store, addChatEntry]);
+
+  const handleKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      void send();
+    }
   };
 
-  const onAskAnother = () => {
-    setMessages([]);
-    setExpertResponses([]);
-    setOracleContent(null);
-    setWeftThreads([]);
-    setInputValue("");
-    hasSavedRef.current = false;
-    setTimeout(() => {
-      inputRef.current?.scrollIntoView({ behavior: "smooth" });
-      inputRef.current?.focus();
-    }, 50);
-  };
+  if (!ready) return null;
+  if (!store.birthData) {
+    router.replace("/");
+    return null;
+  }
 
-  const lastAssistantMessage = messages.filter((m) => m.role === "assistant").at(-1);
-  const isWaitingForExperts = isLoading && expertResponses.length === 0;
-  const showOracleFromStream = !isLoading && oracleContent !== null;
-  const showOracleFromMessage = lastAssistantMessage && typeof lastAssistantMessage.content === "string" && !oracleContent;
-  const isEmpty = messages.length === 0 && !isLoading && expertResponses.length === 0;
-
-  // Status label for LoomBar
-  const totalTraditions = Object.keys(EXPERT_ID_TO_TRADITION).length;
-  const loomStatus = (() => {
-    if (weftThreads.length === 0) return `4 threads · ${/* row count */ 13} readings woven`;
-    if (isLoading) return `The Council weaves your answer. · ${expertResponses.length} / ${totalTraditions} traditions`;
-    if (weftThreads.some((w) => w.isOracle)) return `Row 14 complete. Your tapestry grows.`;
-    return `${expertResponses.length} / ${totalTraditions} traditions`;
-  })();
-
-  const pendingTraditions: TraditionId[] = (() => {
-    if (!isLoading) return [];
-    const done = new Set(expertResponses.map((r) => EXPERT_ID_TO_TRADITION[r.expertId]).filter(Boolean));
-    return (Object.values(EXPERT_ID_TO_TRADITION) as TraditionId[]).filter((t) => !done.has(t));
-  })();
+  const messages = buildMessages(store.chatHistory);
 
   return (
-    <div style={{ position: "relative", minHeight: "100vh", backgroundColor: BG, color: TEXT, overflow: "hidden" }}>
-      <TapestryBackground />
+    <div
+      style={{
+        minHeight: "100dvh",
+        display: "flex",
+        flexDirection: "column",
+        maxWidth: 480,
+        margin: "0 auto",
+        backgroundColor: BG,
+      }}
+    >
+      {/* Top bar */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "18px 20px 14px",
+          borderBottom: `1px solid ${BORDER}`,
+          position: "sticky",
+          top: 0,
+          backgroundColor: BG,
+          zIndex: 10,
+        }}
+      >
+        <button
+          onClick={() => router.push("/daily")}
+          style={{
+            background: "none",
+            border: "none",
+            cursor: "pointer",
+            fontSize: 14,
+            color: MUTED,
+            fontFamily: "var(--font-geist-mono), monospace",
+            letterSpacing: "0.06em",
+            padding: 0,
+          }}
+        >
+          ← Daily
+        </button>
+        <span
+          style={{
+            fontSize: 12,
+            letterSpacing: "0.14em",
+            textTransform: "uppercase",
+            color: MUTED,
+            fontFamily: "var(--font-geist-mono), monospace",
+          }}
+        >
+          The Oracle
+        </span>
+        <span style={{ width: 40 }} />
+      </div>
 
-      <div style={{ position: "relative", zIndex: 1 }}>
-        <ContentColumn style={{ backgroundColor: BG, minHeight: "100vh" }}>
-          <Nav showTapestryLink />
-
-          {/* LoomBar section */}
+      {/* Message list */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "20px 20px 0" }}>
+        {messages.length === 0 && !streamingQ && (
           <div
             style={{
-              borderBottom: "1px solid rgba(245,240,232,0.06)",
-              paddingTop: 12,
-              paddingBottom: 8,
+              paddingTop: 60,
+              textAlign: "center",
+              color: MUTED,
+              fontSize: 18,
+              fontStyle: "italic",
+              fontFamily: "var(--font-cormorant), Georgia, serif",
+              lineHeight: 1.5,
             }}
           >
-            <LoomBar weftThreads={weftThreads} />
-            <div style={{ marginTop: 6 }}>
-              <span
-                style={{
-                  fontFamily: "var(--font-geist-sans)",
-                  fontSize: 8,
-                  letterSpacing: "0.14em",
-                  textTransform: "uppercase",
-                  color: TEXT,
-                  opacity: weftThreads.some((w) => w.isOracle) ? 0.35 : 0.3,
-                  fontStyle: weftThreads.some((w) => w.isOracle) ? "italic" : "normal",
-                  display: "block",
-                }}
-              >
-                {loomStatus}
-              </span>
-            </div>
+            Ask anything about today.
           </div>
+        )}
 
-          {/* Content area */}
-          <div style={{ paddingTop: isEmpty ? 56 : 40, paddingBottom: 120 }}>
-
-            {/* ── Empty state: question entry ───────────────────── */}
-            {isEmpty && (
-              <div>
-                <h1
-                  style={{
-                    fontFamily: "var(--font-cormorant)",
-                    fontStyle: "italic",
-                    fontSize: "clamp(28px, 5vw, 38px)",
-                    fontWeight: 300,
-                    color: TEXT,
-                    opacity: 0.45,
-                    margin: "0 0 32px",
-                    lineHeight: 1.3,
-                  }}
-                >
-                  What do you seek to understand?
-                </h1>
-
-                <div style={{ position: "relative" }}>
-                  <textarea
-                    ref={inputRef}
-                    value={inputValue}
-                    onChange={(e) => setInputValue(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        onSubmit();
-                      }
-                    }}
-                    placeholder="Ask freely. The Council listens without judgment."
-                    rows={4}
-                    style={{
-                      width: "100%",
-                      background: "transparent",
-                      border: "none",
-                      borderBottom: "1px solid rgba(245,240,232,0.18)",
-                      outline: "none",
-                      resize: "none",
-                      fontFamily: "var(--font-cormorant)",
-                      fontSize: 22,
-                      lineHeight: 1.6,
-                      color: TEXT,
-                      padding: "4px 0 12px",
-                      boxSizing: "border-box",
-                      caretColor: TEXT,
-                    }}
-                  />
-                </div>
-
-                {/* Reading date */}
-                <div style={{ marginTop: 16, marginBottom: 4, display: "flex", alignItems: "center", gap: 10 }}>
-                  <span
-                    style={{
-                      fontFamily: "var(--font-geist-sans)",
-                      fontSize: 9,
-                      letterSpacing: "0.14em",
-                      textTransform: "uppercase",
-                      color: TEXT,
-                      opacity: 0.3,
-                    }}
-                  >
-                    Reading date
-                  </span>
-                  <input
-                    type="date"
-                    value={readingDate}
-                    onChange={(e) => setReadingDate(e.target.value)}
-                    style={{
-                      background: "transparent",
-                      border: "none",
-                      borderBottom: "1px solid rgba(245,240,232,0.12)",
-                      outline: "none",
-                      color: TEXT,
-                      fontFamily: "var(--font-geist-mono)",
-                      fontSize: 11,
-                      opacity: 0.45,
-                      padding: "2px 0",
-                      colorScheme: "dark",
-                    }}
-                  />
-                </div>
-
-                {/* Quick prompts */}
-                <div style={{ marginTop: 20, marginBottom: 36 }}>
-                  <span
-                    style={{
-                      fontFamily: "var(--font-geist-sans)",
-                      fontSize: 8,
-                      letterSpacing: "0.14em",
-                      textTransform: "uppercase",
-                      color: TEXT,
-                      opacity: 0.22,
-                      display: "block",
-                      marginBottom: 10,
-                    }}
-                  >
-                    Or begin with
-                  </span>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    {QUESTION_PROMPTS.map((prompt) => (
-                      <button
-                        key={prompt}
-                        onClick={() => setInputValue(prompt)}
-                        style={{
-                          background: "transparent",
-                          border: "1px solid rgba(245,240,232,0.14)",
-                          borderRadius: 0,
-                          padding: "6px 12px",
-                          fontFamily: "var(--font-cormorant)",
-                          fontStyle: "italic",
-                          fontSize: 14,
-                          color: TEXT,
-                          opacity: 0.5,
-                          cursor: "pointer",
-                          transition: "opacity 0.15s",
-                        }}
-                        onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.opacity = "0.8")}
-                        onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.opacity = "0.5")}
-                      >
-                        {prompt}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <button
-                  onClick={onSubmit}
-                  disabled={!inputValue.trim()}
-                  style={{
-                    border: "1px solid rgba(245,240,232,0.28)",
-                    borderRadius: 0,
-                    background: "transparent",
-                    padding: "12px 28px",
-                    fontFamily: "var(--font-geist-sans)",
-                    fontSize: 10,
-                    letterSpacing: "0.18em",
-                    textTransform: "uppercase",
-                    color: TEXT,
-                    opacity: inputValue.trim() ? 0.7 : 0.3,
-                    cursor: inputValue.trim() ? "pointer" : "default",
-                    transition: "opacity 0.2s",
-                  }}
-                >
-                  Weave this question into the Council
-                </button>
-
-                {/* The Council — who will respond */}
+        {/* History messages */}
+        {messages.map((msg) => {
+          if (msg.type === "user") {
+            return (
+              <div
+                key={msg.id}
+                style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}
+              >
                 <div
                   style={{
-                    marginTop: 56,
-                    paddingTop: 28,
-                    borderTop: "1px solid rgba(245,240,232,0.06)",
+                    maxWidth: "78%",
+                    background: USER_BG,
+                    padding: "10px 14px",
+                    fontSize: 16,
+                    color: TEXT,
+                    lineHeight: 1.5,
                   }}
                 >
-                  <span
+                  {msg.q}
+                </div>
+              </div>
+            );
+          }
+
+          // Oracle bubble
+          const chimers = msg.oracle?.chimers ?? [];
+          const chimerExperts = (msg.experts ?? []).filter((e) => {
+            const trad = EXPERT_TRADITION[e.expertId];
+            return trad && chimers.includes(trad);
+          });
+
+          return (
+            <div key={msg.id} style={{ marginBottom: 20 }}>
+              <div
+                style={{
+                  maxWidth: "88%",
+                  background: ACCENT_DIM,
+                  padding: "14px 16px",
+                  borderLeft: `2px solid ${ACCENT}`,
+                }}
+              >
+                {msg.error ? (
+                  <div style={{ fontSize: 14, color: "#f87171" }}>{msg.error}</div>
+                ) : (
+                  <p
                     style={{
-                      fontFamily: "var(--font-geist-sans)",
-                      fontSize: 9,
-                      letterSpacing: "0.22em",
-                      textTransform: "uppercase",
-                      color: "rgba(245,240,232,0.22)",
-                      display: "block",
-                      marginBottom: 20,
+                      margin: 0,
+                      fontSize: 16,
+                      color: TEXT,
+                      lineHeight: 1.6,
                     }}
                   >
-                    The Council
-                  </span>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-                    {TRADITIONS.filter((t) => t.id !== "oracle").map((t, i) => (
-                      <div
-                        key={t.id}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 14,
-                          padding: "11px 0",
-                          borderBottom: "1px solid rgba(245,240,232,0.05)",
-                        }}
-                      >
-                        <div style={{ width: 2, height: 18, background: t.hex, opacity: 0.75, flexShrink: 0 }} />
-                        <span style={{ fontSize: 11, color: t.hex, opacity: 0.8, flexShrink: 0 }}>{t.symbol}</span>
-                        <span
-                          style={{
-                            fontFamily: "var(--font-geist-sans)",
-                            fontSize: 11,
-                            color: "rgba(245,240,232,0.5)",
-                            letterSpacing: "0.02em",
-                          }}
-                        >
-                          {t.label}
-                        </span>
-                      </div>
-                    ))}
-                    {/* Oracle row */}
+                    {msg.oracle?.summary || msg.oracle?.oneLiner || ""}
+                  </p>
+                )}
+                {msg.durationMs !== undefined && (
+                  <div
+                    style={{
+                      marginTop: 8,
+                      fontSize: 11,
+                      color: MUTED,
+                      fontFamily: "var(--font-geist-mono), monospace",
+                    }}
+                  >
+                    {elapsedStr(msg.durationMs)}
+                  </div>
+                )}
+              </div>
+
+              {/* Chimer asides */}
+              {chimerExperts.length > 0 && (
+                <div style={{ maxWidth: "88%", marginTop: 2 }}>
+                  {chimerExperts.map((e) => (
+                    <ChimerAside key={e.expertId} expert={e} />
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {/* Streaming message */}
+        {streamingQ && (
+          <>
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+              <div
+                style={{
+                  maxWidth: "78%",
+                  background: USER_BG,
+                  padding: "10px 14px",
+                  fontSize: 16,
+                  color: TEXT,
+                  lineHeight: 1.5,
+                }}
+              >
+                {streamingQ}
+              </div>
+            </div>
+            <div style={{ marginBottom: 20 }}>
+              <div
+                style={{
+                  maxWidth: "88%",
+                  background: ACCENT_DIM,
+                  borderLeft: `2px solid ${ACCENT}`,
+                }}
+              >
+                {streamingOracle ? (
+                  <div style={{ padding: "14px 16px" }}>
+                    <p style={{ margin: 0, fontSize: 16, color: TEXT, lineHeight: 1.6 }}>
+                      {streamingOracle.summary || streamingOracle.oneLiner}
+                    </p>
                     <div
                       style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 14,
-                        padding: "11px 0",
+                        marginTop: 8,
+                        fontSize: 11,
+                        color: ACCENT,
+                        fontFamily: "var(--font-geist-mono), monospace",
+                        animation: "pulse 1.5s ease-in-out infinite",
                       }}
                     >
-                      <div style={{ width: 2, height: 18, background: "#BFA882", opacity: 0.5, flexShrink: 0 }} />
-                      <span style={{ fontSize: 11, color: "#BFA882", opacity: 0.6, flexShrink: 0 }}>◎</span>
-                      <span
-                        style={{
-                          fontFamily: "var(--font-cormorant)",
-                          fontStyle: "italic",
-                          fontSize: 14,
-                          color: "rgba(245,240,232,0.28)",
-                          letterSpacing: "0.01em",
-                        }}
-                      >
-                        synthesized by The Oracle
-                      </span>
+                      {elapsedStr(elapsed)}
                     </div>
                   </div>
-                </div>
-              </div>
-            )}
-
-            {/* ── Reading in progress / complete ────────────────── */}
-            {!isEmpty && (
-              <div>
-                {/* User's question — dimmed */}
-                {messages.filter((m) => m.role === "user").slice(-1).map((m) => (
-                  <p
-                    key={m.id}
-                    style={{
-                      fontFamily: "var(--font-cormorant)",
-                      fontStyle: "italic",
-                      fontSize: 18,
-                      lineHeight: 1.6,
-                      color: TEXT,
-                      opacity: 0.38,
-                      margin: "0 0 32px",
-                    }}
-                  >
-                    "{typeof m.content === "string" ? m.content : ""}"
-                  </p>
-                ))}
-
-                <div style={{ height: 1, backgroundColor: TEXT, opacity: 0.07, width: "100%", marginBottom: 24 }} />
-
-                {/* Expert cards */}
-                <div style={{ display: "flex", flexDirection: "column", gap: 2, marginBottom: 48 }}>
-                  {/* Completed expert responses */}
-                  {expertResponses.map((r, i) => {
-                    const tradId = EXPERT_ID_TO_TRADITION[r.expertId] ?? "western";
-                    const displayText = typeof r.content === "string" ? r.content : r.content.oneLiner;
-                    return (
-                      <div
-                        key={r.expertId}
-                        style={{
-                          animation: `fade-in-up 0.35s ease-out ${i * 80}ms both`,
-                        }}
-                      >
-                        <ExpertCard
-                          tradition={tradId as TraditionId}
-                          text={displayText}
-                          pending={false}
-                        />
-                      </div>
-                    );
-                  })}
-
-                  {/* Pending traditions (while loading) */}
-                  {isLoading && pendingTraditions.map((tradId) => (
-                    <ExpertCard
-                      key={tradId}
-                      tradition={tradId}
-                      pending
-                    />
-                  ))}
-
-                  {/* Stream-in oracle judge verdict as expert card if it came as assistant message */}
-                  {showOracleFromMessage && expertResponses.length > 0 && (
-                    <ExpertCard
-                      tradition="oracle"
-                      text={typeof lastAssistantMessage!.content === "string" ? lastAssistantMessage!.content : ""}
-                      pending={isLoading}
-                    />
-                  )}
-                </div>
-
-                {/* Oracle section — from stream data */}
-                {showOracleFromStream && oracleContent && (
-                  <>
-                    <OracleSection
-                      content={oracleContent.summary}
-                      onTapestryClick={() => router.push("/tapestry")}
-                    />
-                    <div style={{ marginTop: 16, marginBottom: 8 }}>
-                      <button
-                        onClick={onAskAnother}
-                        style={{
-                          background: "none",
-                          border: "none",
-                          padding: 0,
-                          fontFamily: "var(--font-geist-sans)",
-                          fontSize: 11,
-                          color: "rgba(245,240,232,0.4)",
-                          cursor: "pointer",
-                          letterSpacing: "0.04em",
-                        }}
-                        onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "rgba(245,240,232,0.7)"; }}
-                        onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "rgba(245,240,232,0.4)"; }}
-                      >
-                        Ask another question
-                      </button>
-                    </div>
-                  </>
-                )}
-
-                {/* Oracle from message if no stream data verdict */}
-                {showOracleFromMessage && expertResponses.length === 0 && (
-                  <>
-                    <OracleSection
-                      content={typeof lastAssistantMessage!.content === "string" ? lastAssistantMessage!.content : ""}
-                      isStreaming={isLoading}
-                      onTapestryClick={() => router.push("/tapestry")}
-                    />
-                    {!isLoading && (
-                      <div style={{ marginTop: 16, marginBottom: 8 }}>
-                        <button
-                          onClick={onAskAnother}
-                          style={{
-                            background: "none",
-                            border: "none",
-                            padding: 0,
-                            fontFamily: "var(--font-geist-sans)",
-                            fontSize: 11,
-                            color: "rgba(245,240,232,0.4)",
-                            cursor: "pointer",
-                            letterSpacing: "0.04em",
-                          }}
-                          onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "rgba(245,240,232,0.7)"; }}
-                          onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = "rgba(245,240,232,0.4)"; }}
-                        >
-                          Ask another question
-                        </button>
-                      </div>
-                    )}
-                  </>
-                )}
-
-                {/* Follow-up textarea */}
-                {!isLoading && (oracleContent || lastAssistantMessage) && (
-                  <div style={{ marginTop: 40 }}>
-                    <form onSubmit={onSubmit}>
-                      <textarea
-                        value={inputValue}
-                        onChange={(e) => setInputValue(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && !e.shiftKey) {
-                            e.preventDefault();
-                            onSubmit();
-                          }
-                        }}
-                        placeholder="Continue the inquiry…"
-                        rows={3}
-                        style={{
-                          width: "100%",
-                          background: "transparent",
-                          border: "none",
-                          borderBottom: "1px solid rgba(245,240,232,0.14)",
-                          outline: "none",
-                          resize: "none",
-                          fontFamily: "var(--font-cormorant)",
-                          fontStyle: "italic",
-                          fontSize: 18,
-                          color: TEXT,
-                          opacity: 0.45,
-                          padding: "4px 0 10px",
-                          lineHeight: 1.65,
-                          boxSizing: "border-box",
-                          caretColor: TEXT,
-                        }}
-                      />
-                    </form>
-                  </div>
+                ) : (
+                  <TypingDots />
                 )}
               </div>
-            )}
+              {/* Show chimers that streamed in during live session */}
+              {streamingOracle && streamingOracle.chimers && streamingOracle.chimers.length > 0 && (
+                <div style={{ maxWidth: "88%", marginTop: 2 }}>
+                  {streamingExperts
+                    .filter((e) => {
+                      const trad = EXPERT_TRADITION[e.expertId];
+                      return trad && streamingOracle.chimers!.includes(trad);
+                    })
+                    .map((e) => (
+                      <ChimerAside key={e.expertId} expert={e} />
+                    ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
 
-            <div ref={bottomRef} />
-          </div>
-        </ContentColumn>
+        <div ref={bottomRef} style={{ height: 16 }} />
       </div>
+
+      {/* Input */}
+      <div
+        style={{
+          borderTop: `1px solid ${BORDER}`,
+          padding: "14px 20px",
+          paddingBottom: "calc(14px + env(safe-area-inset-bottom, 0px))",
+          backgroundColor: BG,
+          position: "sticky",
+          bottom: 0,
+        }}
+      >
+        {/* Suggested prompts — only when textarea is empty */}
+        {!busy && !question.trim() && suggestions.length > 0 && (
+          <div
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 6,
+              marginBottom: 10,
+              flexWrap: "wrap",
+            }}
+          >
+            {suggestions.map((p) => (
+              <button
+                key={p}
+                onClick={() => setQuestion(p)}
+                style={{
+                  background: "none",
+                  border: `1px solid ${BORDER}`,
+                  color: MUTED,
+                  fontSize: 12,
+                  fontFamily: "var(--font-geist-mono), monospace",
+                  padding: "6px 10px",
+                  cursor: "pointer",
+                  textAlign: "left",
+                  lineHeight: 1.4,
+                  flex: "1 1 0",
+                  minWidth: 0,
+                }}
+              >
+                {p}
+              </button>
+            ))}
+            <button
+              onClick={() => setSuggestions((prev) => pickThree(prev))}
+              style={{
+                background: "none",
+                border: `1px solid ${BORDER}`,
+                color: MUTED,
+                fontSize: 14,
+                fontFamily: "var(--font-geist-mono), monospace",
+                padding: "6px 10px",
+                cursor: "pointer",
+                flexShrink: 0,
+              }}
+              title="Shuffle suggestions"
+            >
+              ↻
+            </button>
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+        <textarea
+          ref={textareaRef}
+          value={question}
+          onChange={(e) => setQuestion(e.target.value)}
+          onKeyDown={handleKey}
+          placeholder="Ask the Oracle…"
+          rows={2}
+          disabled={busy}
+          style={{
+            flex: 1,
+            background: "rgba(245,240,232,0.04)",
+            border: `1px solid ${BORDER}`,
+            color: TEXT,
+            fontSize: 16,
+            padding: "12px 14px",
+            resize: "none",
+            outline: "none",
+            borderRadius: 0,
+            fontFamily: "var(--font-geist-sans), system-ui, sans-serif",
+            lineHeight: 1.5,
+            boxSizing: "border-box",
+          }}
+        />
+        <button
+          onClick={() => void send()}
+          disabled={busy || !question.trim()}
+          style={{
+            padding: "12px 18px",
+            background: busy || !question.trim() ? "rgba(191,168,130,0.2)" : ACCENT,
+            color: busy || !question.trim() ? "rgba(10,11,20,0.4)" : "#0A0B14",
+            fontSize: 13,
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+            fontFamily: "var(--font-geist-mono), monospace",
+            border: "none",
+            cursor: busy || !question.trim() ? "not-allowed" : "pointer",
+            fontWeight: 600,
+            flexShrink: 0,
+            alignSelf: "flex-end",
+          }}
+        >
+          Send
+        </button>
+        </div>
+      </div>
+
+      <style>{`
+        @keyframes typingDot {
+          0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+          40% { opacity: 1; transform: scale(1); }
+        }
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.4; }
+        }
+        textarea::placeholder { color: rgba(245,240,232,0.2); }
+      `}</style>
     </div>
   );
 }
