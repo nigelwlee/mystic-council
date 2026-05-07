@@ -1,7 +1,6 @@
-import { generateObject, generateText } from "ai";
+import { generateObject } from "ai";
 import { z } from "zod";
 import { createOpenAI } from "@ai-sdk/openai";
-import { parseJudgeOutput } from "@/lib/orchestrator";
 import { experts } from "@/lib/experts/registry";
 import { judgeConfig } from "@/lib/experts/judge";
 import { runSingleExpert } from "@/lib/api/run-expert";
@@ -114,16 +113,20 @@ export async function POST(req: Request) {
   const judgeStart = Date.now();
   let oracle: CouncilReading["oracle"];
 
+  const JudgeCouncilSchema = z.object({
+    summary: z.string(),
+    oneLiner: z.string(),
+  });
   try {
-    const judgeResult = await generateText({
+    const judgeResult = await generateObject({
       model: openrouter(judgeConfig.model),
       system: judgeSystemPrompt,
       messages: [{ role: "user", content: question }],
+      schema: JudgeCouncilSchema,
     });
-    const parsed = parseJudgeOutput(judgeResult.text);
     oracle = {
-      summary: parsed.summary,
-      oneLiner: parsed.oneLiner,
+      summary: judgeResult.object.summary,
+      oneLiner: judgeResult.object.oneLiner,
       durationMs: Date.now() - judgeStart,
       usage: judgeResult.usage
         ? {
