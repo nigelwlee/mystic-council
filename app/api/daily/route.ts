@@ -12,6 +12,7 @@ import { VOICE_RULES } from "@/lib/voice";
 import { FORMAT_RULES } from "@/lib/format";
 import type { DailyReadingResponse, ExpertReading } from "@/lib/api/schemas";
 import { createClient } from "@/lib/supabase/server";
+import { makeSeededTarotTools } from "@/lib/tools/tarot";
 
 export const maxDuration = 60;
 
@@ -87,7 +88,12 @@ export async function POST(req: Request) {
     experts.map((e) => {
       const tid = EXPERT_ID_TO_TRADITION[e.id];
       const ctx = tid ? chartContextForTradition(chart, tid) : null;
-      return runSingleExpert(e, dailyMessage, birthData, ctx);
+      // For the tarot expert, inject date-seeded tools so the same date always yields the same cards
+      const expertWithSeed =
+        e.id === "madame-crow"
+          ? { ...e, tools: makeSeededTarotTools(date) }
+          : e;
+      return runSingleExpert(expertWithSeed, dailyMessage, birthData, ctx);
     })
   );
 
