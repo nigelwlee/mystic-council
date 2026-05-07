@@ -32,10 +32,15 @@ export async function POST(
 
   const body = await req.json();
   // Accept either QuestionInput or ContextInput
-  const parsed =
-    QuestionInputSchema.safeParse(body).success
-      ? QuestionInputSchema.parse(body)
-      : ContextInputSchema.parse(body);
+  const questionParsed = QuestionInputSchema.safeParse(body);
+  const contextParsed = questionParsed.success ? null : ContextInputSchema.safeParse(body);
+  if (!questionParsed.success && !contextParsed!.success) {
+    return Response.json(
+      { error: "Invalid request body", details: contextParsed!.error.flatten() },
+      { status: 400 }
+    );
+  }
+  const parsed = questionParsed.success ? questionParsed.data : contextParsed!.data!;
 
   const { birthData, date } = parsed;
   const question = "question" in parsed ? parsed.question : undefined;
