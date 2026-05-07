@@ -54,6 +54,7 @@ const spreadSchema = z.object({
     .enum(["single", "three-card", "five-card"])
     .describe("Type of spread to draw"),
   question: z.string().optional().describe("The question or focus for the reading"),
+  seed: z.string().optional().describe("Optional seed for deterministic draws (e.g. date string for daily readings)"),
 });
 
 const lookupSchema = z.object({
@@ -71,9 +72,10 @@ export function makeDrawCardsTool(rng?: () => number) {
     description:
       "Draw tarot cards for a reading. Supports single card, three-card spread (past/present/future), or five-card spread.",
     parameters: spreadSchema,
-    execute: async ({ spread, question }: z.infer<typeof spreadSchema>) => {
+    execute: async ({ spread, question, seed }: z.infer<typeof spreadSchema>) => {
       const counts: Record<string, number> = { single: 1, "three-card": 3, "five-card": 5 };
-      const cards = drawRandom(counts[spread] ?? 1, rng);
+      const effectiveRng = seed ? makeSeededRng(seed) : rng;
+      const cards = drawRandom(counts[spread] ?? 1, effectiveRng);
 
       return {
         spread,
@@ -110,3 +112,15 @@ export const tarotTools = {
     },
   }),
 };
+
+/**
+ * Returns a tarotTools variant where drawCards is pre-seeded.
+ * Use for daily readings so the same date always yields the same cards.
+ * Format: makeSeededTarotTools("2024-01-15")
+ */
+export function makeSeededTarotTools(seed: string): typeof tarotTools {
+  return {
+    ...tarotTools,
+    drawCards: makeDrawCardsTool(makeSeededRng(seed)),
+  };
+}
