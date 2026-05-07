@@ -12,6 +12,7 @@ import { chartContextForTradition } from "@/lib/api/chart-context";
 import { VOICE_RULES } from "@/lib/voice";
 import { FORMAT_RULES } from "@/lib/format";
 import type { DailyReadingResponse, ExpertReading } from "@/lib/api/schemas";
+import { createClient } from "@/lib/supabase/server";
 
 export const maxDuration = 60;
 
@@ -33,6 +34,25 @@ export async function POST(req: Request) {
 
   const { birthData, date, chart } = parsed.data;
   const start = Date.now();
+
+  // Resolve authenticated user (if any) via Supabase session cookie
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  // Cache check: if authenticated and not in mock mode, return cached daily reading
+  if (user && process.env.MOCK_MODE !== "true") {
+    const { data: cached } = await supabase
+      .from("readings")
+      .select("output")
+      .eq("user_id", user.id)
+      .eq("reading_date", date)
+      .eq("kind", "daily")
+      .maybeSingle();
+
+    if (cached?.output) {
+      return Response.json(cached.output as DailyReadingResponse);
+    }
+  }
 
   if (process.env.MOCK_MODE === "true") {
     await sleep(300 + Math.random() * 500);
@@ -153,6 +173,26 @@ export async function POST(req: Request) {
     oracle,
     totalDurationMs: Date.now() - start,
   };
+
+  // Persist to Supabase if user is authenticated
+  if (user) {
+    const { error: dbError } = await supabase
+      .from("readings")
+      .upsert(
+        {
+          user_id: user.id,
+          kind: "daily",
+          reading_date: date,
+          input: { birthData, date },
+          output: reading,
+          total_duration_ms: reading.totalDurationMs,
+        },
+        { onConflict: "user_id,reading_date" }
+      );
+    if (dbError) {
+      console.error("[daily] Supabase upsert error:", dbError.message);
+    }
+  }
 
   return Response.json(reading);
 }
