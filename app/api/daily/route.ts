@@ -1,11 +1,10 @@
-import { generateText } from "ai";
+import { generateObject } from "ai";
+import { z } from "zod";
 import { createOpenAI } from "@ai-sdk/openai";
-import { parseJudgeOutput } from "@/lib/orchestrator";
 import { experts } from "@/lib/experts/registry";
 import { judgeConfig } from "@/lib/experts/judge";
 import { runSingleExpert } from "@/lib/api/run-expert";
 import { mockExpertResponses, mockJudgeVerdict } from "@/lib/mock-data";
-import { MOCK_DAILY_READING } from "@/lib/mock-daily";
 import { EXPERT_ID_TO_TRADITION } from "@/lib/constants/traditions";
 import { ContextInputSchema } from "@/lib/api/schemas";
 import { chartContextForTradition } from "@/lib/api/chart-context";
@@ -56,7 +55,6 @@ export async function POST(req: Request) {
 
   if (process.env.MOCK_MODE === "true") {
     await sleep(300 + Math.random() * 500);
-    // Build a rich mock response from the existing mock data
     const expertReadings: ExpertReading[] = mockExpertResponses.map((r) => {
       const tid = EXPERT_ID_TO_TRADITION[r.expertId];
       return {
@@ -72,21 +70,12 @@ export async function POST(req: Request) {
         durationMs: 400 + Math.floor(Math.random() * 300),
       };
     });
-    // Cross-check against MOCK_DAILY_READING for oneLiners (daily highlights)
-    for (const h of MOCK_DAILY_READING.expertHighlights) {
-      const er = expertReadings.find((r) => r.traditionId === h.traditionId);
-      if (er) er.content = { ...er.content, oneLiner: h.highlight };
-    }
     const reading: DailyReadingResponse = {
       id: crypto.randomUUID(),
       generatedAt: new Date().toISOString(),
       input: { birthData, date },
       experts: expertReadings,
-      oracle: {
-        summary: mockJudgeVerdict.summary,
-        oneLiner: MOCK_DAILY_READING.oracleSummary,
-        durationMs: 300,
-      },
+      oracle: { summary: mockJudgeVerdict.summary, oneLiner: mockJudgeVerdict.oneLiner, durationMs: 300 },
       totalDurationMs: Date.now() - start,
     };
     return Response.json(reading);
@@ -131,17 +120,21 @@ export async function POST(req: Request) {
   const judgeStart = Date.now();
 
   const judgeUserMessage = `Synthesize a daily reading for ${date} in 2-3 sentences.`;
+  const JudgeDailySchema = z.object({
+    summary: z.string(),
+    oneLiner: z.string(),
+  });
   let oracle: DailyReadingResponse["oracle"];
   try {
-    const judgeResult = await generateText({
+    const judgeResult = await generateObject({
       model: openrouter(judgeConfig.model),
       system: judgeSystemPrompt,
       messages: [{ role: "user", content: judgeUserMessage }],
+      schema: JudgeDailySchema,
     });
-    const parsed = parseJudgeOutput(judgeResult.text);
     oracle = {
-      summary: parsed.summary,
-      oneLiner: parsed.oneLiner,
+      summary: judgeResult.object.summary,
+      oneLiner: judgeResult.object.oneLiner,
       durationMs: Date.now() - judgeStart,
       usage: judgeResult.usage
         ? {

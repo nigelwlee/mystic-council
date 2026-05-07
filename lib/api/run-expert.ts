@@ -1,13 +1,14 @@
 import { generateText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
+import { z } from "zod";
 import { loadKnowledge } from "@/lib/knowledge/loader";
-import { formatBirthData, patchToolsWithBirthData } from "@/lib/orchestrator";
 import { EXPERT_ID_TO_TRADITION } from "@/lib/constants/traditions";
 import { voiceRulesForTradition } from "@/lib/voice";
 import { FORMAT_RULES, sanitizeField } from "@/lib/format";
 import { ExpertContentSchema } from "@/lib/api/schemas";
 import type { BirthData, ExpertConfig } from "@/lib/experts/types";
 import type { ExpertReading } from "@/lib/api/schemas";
+import type { CoreTool } from "ai";
 
 const openrouter = createOpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
@@ -23,6 +24,52 @@ OUTPUT FORMAT — STRICT JSON ONLY. All four values MUST be plain text strings �
   "summary": "2-3 sentence reading capturing the essence.",
   "oneLiner": "START with the exact artifact from your tradition — the card name, the transit name, the dasha name, the pillar, the number. Then 4-8 words on what it means right now. Max 15 words total. No intro, no formula. Examples: Tarot → 'Tower reversed. A crisis dissolves before it lands.' Western → 'Mars trines your natal Jupiter. Effort pays off today.' Vedic → 'Mercury antardasha in Saturn mahadasha. Write it down, commit nothing yet.' Chinese → 'Bing Wu day clashes your Geng Metal. Tension at midday, resolve by evening.' Numerology → 'Personal Day 8. Money or power moves are in play.'"
 }`;
+
+export function formatBirthData(birthData: BirthData | null): string {
+  if (!birthData || (!birthData.date && !birthData.name)) {
+    return "No birth data provided.";
+  }
+  const parts: string[] = [];
+  if (birthData.name) parts.push(`Name: ${birthData.name}`);
+  if (birthData.date) parts.push(`Birth date: ${birthData.date}`);
+  if (birthData.time) parts.push(`Birth time: ${birthData.time}`);
+  if (birthData.location) parts.push(`Location: ${birthData.location}`);
+  return parts.join(" | ");
+}
+
+export function patchToolsWithBirthData(
+  tools: Record<string, CoreTool<z.ZodTypeAny, unknown>>,
+  birthData: BirthData | null,
+): Record<string, CoreTool<z.ZodTypeAny, unknown>> {
+  if (!birthData) return tools;
+
+  const patched: Record<string, CoreTool<z.ZodTypeAny, unknown>> = {};
+
+  for (const [name, tool] of Object.entries(tools)) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const origShape = (tool.parameters as any).shape as Record<string, z.ZodTypeAny> | undefined;
+    const looseParams = origShape
+      ? z.object(Object.fromEntries(Object.entries(origShape).map(([k, v]) => [k, v.optional()])))
+      : tool.parameters;
+
+    patched[name] = {
+      description: tool.description,
+      parameters: looseParams,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      execute: async (args: any, opts) => {
+        const filled: Record<string, unknown> = { ...args };
+        if (!filled.date && birthData.date) filled.date = birthData.date;
+        if (!filled.birthdate && birthData.date) filled.birthdate = birthData.date;
+        if (!filled.time && birthData.time) filled.time = birthData.time;
+        if (!filled.fullName && birthData.name) filled.fullName = birthData.name;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return tool.execute!(filled as any, opts as any);
+      },
+    };
+  }
+
+  return patched;
+}
 
 function parseExpertJson(text: string, expertId: string): typeof ExpertContentSchema._type {
   const jsonMatch = text.match(/\{[\s\S]*\}/);
