@@ -3,13 +3,11 @@ import { z } from "zod";
 import { createOpenAI } from "@ai-sdk/openai";
 import { experts } from "@/lib/experts/registry";
 import { judgeConfig } from "@/lib/experts/judge";
-import { runSingleExpert } from "@/lib/api/run-expert";
+import { runSingleExpert, synthesize } from "@/lib/api/run-expert";
 import { mockExpertResponses, mockJudgeVerdict } from "@/lib/mock-data";
 import { EXPERT_ID_TO_TRADITION } from "@/lib/constants/traditions";
 import { QuestionInputSchema } from "@/lib/api/schemas";
 import { chartContextForTradition, dailyPriorFrame } from "@/lib/api/chart-context";
-import { VOICE_RULES } from "@/lib/voice";
-import { FORMAT_RULES } from "@/lib/format";
 import type { CouncilReading, Digest, ExpertReading } from "@/lib/api/schemas";
 
 export const maxDuration = 60;
@@ -100,58 +98,16 @@ export async function POST(req: Request) {
   });
 
   const successful = expertReadings.filter((r) => !r.error);
-  const expertOutputs = successful
-    .map((r) => `### ${r.expertName}\n${r.content.analysis}`)
-    .join("\n\n---\n\n");
 
   const priorFrame = dailyPriorFrame(dailyReading);
-  const judgeSystemPrompt =
-    judgeConfig.systemPromptTemplate.replace("{expertOutputs}", expertOutputs) +
-    (priorFrame ?? "") +
-    "\n\n" + VOICE_RULES +
-    "\n\n" + FORMAT_RULES;
-  const judgeStart = Date.now();
-  let oracle: CouncilReading["oracle"];
-
-  const JudgeCouncilSchema = z.object({
-    summary: z.string(),
-    oneLiner: z.string(),
+  const oracle = await synthesize(expertReadings, {
+    judgeConfig,
+    userMessage: question,
+    priorFrame,
   });
-  try {
-    const judgeResult = await generateObject({
-      model: openrouter(judgeConfig.model),
-      system: judgeSystemPrompt,
-      messages: [{ role: "user", content: question }],
-      schema: JudgeCouncilSchema,
-    });
-    oracle = {
-      summary: judgeResult.object.summary,
-      oneLiner: judgeResult.object.oneLiner,
-      durationMs: Date.now() - judgeStart,
-      usage: judgeResult.usage
-        ? {
-            promptTokens: judgeResult.usage.promptTokens,
-            completionTokens: judgeResult.usage.completionTokens,
-            totalTokens: judgeResult.usage.totalTokens,
-          }
-        : undefined,
-      systemPrompt: judgeSystemPrompt,
-      model: judgeConfig.model,
-      userMessage: question,
-    };
-  } catch (err) {
-    oracle = {
-      summary: "The council was unable to synthesize a verdict.",
-      oneLiner: err instanceof Error ? err.message : String(err),
-      durationMs: Date.now() - judgeStart,
-      systemPrompt: judgeSystemPrompt,
-      model: judgeConfig.model,
-      userMessage: question,
-    };
-  }
 
   let digest: Digest | undefined;
-  if (dailyDigest) {
+  if (dailyDigest && successful.length > 0) {
     const oneLinerOutputs = successful
       .map((r) => `${r.expertName}: ${r.content.oneLiner}`)
       .join("\n");
@@ -166,11 +122,15 @@ export async function POST(req: Request) {
         numerology: z.string().optional(),
       }).describe("One short sentence per tradition capturing their key daily insight"),
     });
+    const digestSystemPrompt = judgeConfig.systemPromptTemplate.replace(
+      "{expertOutputs}",
+      oneLinerOutputs,
+    );
     const digestStart = Date.now();
     try {
       const digestResult = await generateObject({
         model: openrouter(judgeConfig.model),
-        system: judgeSystemPrompt,
+        system: digestSystemPrompt,
         messages: [
           {
             role: "user",
