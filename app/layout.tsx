@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Instrument_Serif, Cormorant_Garamond } from "next/font/google";
 import "./globals.css";
 import { AuthNav } from "@/components/auth/auth-nav";
+import { PostHogProvider } from "@/components/providers/posthog-provider";
 
 const geist = Geist({
   variable: "--font-geist-sans",
@@ -41,8 +42,10 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${geist.variable} ${instrumentSerif.variable} ${cormorantGaramond.variable} h-full dark`}>
       <body className="min-h-full antialiased" style={{ backgroundColor: "#0A0B14", color: "#F5F0E8" }}>
-        <AuthNav />
-        {children}
+        <PostHogProvider>
+          <AuthNav />
+          {children}
+        </PostHogProvider>
       </body>
     </html>
   );

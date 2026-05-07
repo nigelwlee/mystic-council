@@ -3,7 +3,7 @@ import { chineseAstrologyTools } from "@/lib/tools/chinese";
 import { vedicAstrologyTools } from "@/lib/tools/vedic";
 import { numerologyTools } from "@/lib/tools/numerology";
 import { makeSeededRng, makeDrawCardsTool } from "@/lib/tools/tarot";
-import { ContextInputSchema } from "@/lib/api/schemas";
+import { ContextInputSchema, ChartDataSchema } from "@/lib/api/schemas";
 import type { ChartData } from "@/lib/api/schemas";
 
 export const maxDuration = 15;
@@ -105,6 +105,11 @@ export async function POST(req: Request) {
     },
     totalDurationMs: Date.now() - start,
   };
+
+  const validated = ChartDataSchema.safeParse(result);
+  if (!validated.success) {
+    console.error("[chart] Response schema mismatch:", JSON.stringify(validated.error.flatten()));
+  }
 
   chartCache.set(cacheKey, { data: result, expiresAt: Date.now() + CACHE_TTL_MS });
   return Response.json(result);

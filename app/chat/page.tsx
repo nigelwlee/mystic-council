@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { usePostHog } from "posthog-js/react";
 import { useProtoStore, type ProtoExpertReading, type ProtoOracle, type ProtoChatEntry } from "@/lib/hooks/use-proto-store";
 import { runSse } from "@/lib/api/sse";
 
@@ -234,6 +235,7 @@ function buildMessages(history: ProtoChatEntry[]): MessageEntry[] {
 export default function ChatPage() {
   const router = useRouter();
   const { store, ready, addChatEntry } = useProtoStore();
+  const posthog = usePostHog();
   const [question, setQuestion] = useState("");
   const [busy, setBusy] = useState(false);
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -332,6 +334,16 @@ export default function ChatPage() {
         q,
         oracle: liveOracle,
         experts: liveExperts,
+      });
+
+      liveExperts.filter((e) => e.error).forEach((e) => {
+        posthog?.capture("expert_failed", { expertId: e.expertId, error: e.error, endpoint: "council" });
+      });
+      posthog?.capture("chat_message_sent", {
+        questionLength: q.length,
+        durationMs,
+        oracleSuccess: !!liveOracle,
+        failedExperts: liveExperts.filter((e) => e.error).length,
       });
     } catch (e) {
       const durationMs = Date.now() - (startRef.current ?? Date.now());

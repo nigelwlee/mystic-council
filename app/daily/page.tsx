@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { usePostHog } from "posthog-js/react";
 import { useProtoStore, type ProtoExpertReading, type ProtoOracle, type ProtoDailyCache } from "@/lib/hooks/use-proto-store";
 import { runSse } from "@/lib/api/sse";
 
@@ -147,6 +148,7 @@ export default function DailyPage() {
   const router = useRouter();
   const { store, ready, saveCache, clearCache } = useProtoStore();
   const streak = store.streak;
+  const posthog = usePostHog();
 
   const date = today();
   const [phase, setPhase] = useState<"idle" | "chart" | "daily" | "done" | "error">("idle");
@@ -254,6 +256,18 @@ export default function DailyPage() {
       },
     };
     saveCache(date, cacheEntry);
+
+    liveExperts.filter((e) => e.error).forEach((e) => {
+      posthog?.capture("expert_failed", { expertId: e.expertId, error: e.error, endpoint: "daily" });
+    });
+    posthog?.capture("daily_reading_generated", {
+      expertCount: liveExperts.length,
+      failedExperts: liveExperts.filter((e) => e.error).length,
+      oracleSuccess: !!liveOracle,
+      totalDurationMs: Date.now() - (liveExperts[0] ? Date.now() : 0),
+      date,
+    });
+
     setPhase("done");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date, store.cache, saveCache]);
