@@ -71,6 +71,13 @@ export default function InputsPage() {
 
   const { geocoding, coords } = useGeocode(form.location);
 
+  // Redirect to /auth when a password-recovery link lands on this page
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.location.hash.includes("type=recovery")) {
+      router.replace("/auth");
+    }
+  }, [router]);
+
   // Prefill from persisted store on mount — legitimate initialization from localStorage
   useEffect(() => {
     if (!ready) return;
