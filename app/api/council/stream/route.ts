@@ -10,6 +10,7 @@ import { chartContextForTradition, dailyPriorFrame } from "@/lib/api/chart-conte
 import { VOICE_RULES } from "@/lib/voice";
 import { FORMAT_RULES } from "@/lib/format";
 import { makeSeededRng, makeDrawCardsTool } from "@/lib/tools/tarot";
+import { getPostHogClient } from "@/lib/posthog-server";
 
 // Daily tarot: seeded by date+question so the daily reading is stable.
 // Council (chat): seeded by date+question+userId so each user gets unique cards
@@ -158,6 +159,20 @@ export async function POST(req: Request) {
       if (!schemaCheck.success) {
         console.error("[council/stream] Response schema mismatch:", JSON.stringify(schemaCheck.error.flatten()));
       }
+
+      const posthog = getPostHogClient();
+      const distinctId = userId ?? parsed.data.birthData?.name ?? "anonymous";
+      posthog.capture({
+        distinctId,
+        event: "council_request_completed",
+        properties: {
+          expertCount: expertReadings.length,
+          failedExperts: expertReadings.filter((r) => r.error).length,
+          oracleSuccess: !!oracle,
+          totalDurationMs: runComplete.totalDurationMs,
+          date,
+        },
+      });
 
       emit(runComplete);
       controller.close();

@@ -9,6 +9,7 @@ import { ContextInputSchema, DailyReadingResponseSchema } from "@/lib/api/schema
 import { chartContextForTradition } from "@/lib/api/chart-context";
 import { VOICE_RULES } from "@/lib/voice";
 import { FORMAT_RULES } from "@/lib/format";
+import { getPostHogClient } from "@/lib/posthog-server";
 
 export const maxDuration = 90;
 
@@ -129,6 +130,19 @@ export async function POST(req: Request) {
       if (!schemaCheck.success) {
         console.error("[daily/stream] Response schema mismatch:", JSON.stringify(schemaCheck.error.flatten()));
       }
+
+      const posthog = getPostHogClient();
+      posthog.capture({
+        distinctId: parsed.data.birthData?.name ?? "anonymous",
+        event: "daily_request_completed",
+        properties: {
+          expertCount: expertReadings.length,
+          failedExperts: expertReadings.filter((r) => r.error).length,
+          oracleSuccess: !!oracle,
+          totalDurationMs: runComplete.totalDurationMs,
+          date,
+        },
+      });
 
       emit(runComplete);
       controller.close();

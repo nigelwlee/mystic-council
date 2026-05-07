@@ -363,7 +363,7 @@ export default function ChatPage() {
     setStreamingExperts([]);
     setBusy(false);
     startRef.current = null;
-  }, [question, busy, store, addChatEntry]);
+  }, [question, busy, store, addChatEntry, posthog]);
 
   const handleKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -624,7 +624,10 @@ export default function ChatPage() {
             {suggestions.map((p) => (
               <button
                 key={p}
-                onClick={() => setQuestion(p)}
+                onClick={() => {
+                  posthog?.capture("suggested_prompt_selected", { prompt: p });
+                  setQuestion(p);
+                }}
                 style={{
                   background: "none",
                   border: `1px solid ${BORDER}`,

@@ -35,7 +35,7 @@ function formatDate(d: string): string {
   });
 }
 
-function ExpertRow({ expert }: { expert: ProtoExpertReading }) {
+function ExpertRow({ expert, onExpand }: { expert: ProtoExpertReading; onExpand?: (expertId: string) => void }) {
   const [open, setOpen] = useState(false);
   const meta = TRADITION_LABEL[expert.expertId] ?? { label: expert.expertName, symbol: expert.expertEmoji };
   const content = typeof expert.content === "object" && expert.content !== null ? expert.content : null;
@@ -51,7 +51,11 @@ function ExpertRow({ expert }: { expert: ProtoExpertReading }) {
       }}
     >
       <button
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          const next = !open;
+          setOpen(next);
+          if (next) onExpand?.(expert.expertId);
+        }}
         style={{
           display: "flex",
           alignItems: "flex-start",
@@ -285,6 +289,7 @@ export default function DailyPage() {
   }, [ready]);
 
   const handleRefresh = () => {
+    posthog?.capture("daily_reading_refreshed", { date });
     clearCache(date);
     setPhase("idle");
     void runFetch(store.birthData, true);
@@ -419,7 +424,13 @@ export default function DailyPage() {
           {loading && experts.length === 0 ? (
             <Skeleton />
           ) : (
-            experts.map((e) => <ExpertRow key={e.expertId} expert={e} />)
+            experts.map((e) => (
+              <ExpertRow
+                key={e.expertId}
+                expert={e}
+                onExpand={(expertId) => posthog?.capture("expert_expanded", { expertId, endpoint: "daily" })}
+              />
+            ))
           )}
         </div>
       )}
