@@ -1,15 +1,18 @@
-import { generateText } from "ai";
+import { generateObject } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
-import { parseJudgeOutput } from "@/lib/orchestrator";
+import { createHash } from "crypto";
+import { z } from "zod";
 import { experts } from "@/lib/experts/registry";
 import { judgeDailyConfig as judgeConfig } from "@/lib/experts/judge";
 import { runSingleExpert } from "@/lib/api/run-expert";
 import { EXPERT_ID_TO_TRADITION } from "@/lib/constants/traditions";
 import { ContextInputSchema, DailyReadingResponseSchema } from "@/lib/api/schemas";
+import type { DailyReadingResponse } from "@/lib/api/schemas";
 import { chartContextForTradition } from "@/lib/api/chart-context";
 import { VOICE_RULES } from "@/lib/voice";
 import { FORMAT_RULES } from "@/lib/format";
 import { getPostHogClient } from "@/lib/posthog-server";
+import { adminClient } from "@/lib/supabase/admin";
 
 export const maxDuration = 90;
 
@@ -18,6 +21,22 @@ const openrouter = createOpenAI({
   baseURL: "https://openrouter.ai/api/v1",
 });
 
+const JudgeDailySchema = z.object({
+  oneLiner: z.string().describe("One sentence, max 12 words. The clearest signal from today's readings."),
+  summary: z.string().describe("2-3 sentences expanding on the one-liner. Plain language."),
+});
+
+function dailyCacheKey(birthData: Record<string, unknown> | null, date: string): string {
+  const canonical = JSON.stringify({
+    name: birthData?.name ?? "",
+    birthdate: birthData?.date ?? "",
+    time: birthData?.time ?? "",
+    latitude: birthData?.latitude ?? null,
+    longitude: birthData?.longitude ?? null,
+  });
+  return createHash("sha256").update(canonical + "|" + date).digest("hex").slice(0, 32);
+}
+
 export async function POST(req: Request) {
   const body = await req.json();
   const parsed = ContextInputSchema.safeParse(body);
@@ -25,7 +44,6 @@ export async function POST(req: Request) {
     return Response.json({ error: parsed.error.flatten() }, { status: 400 });
   }
   const { birthData, date, chart } = parsed.data;
-  const userMessage = `Give me my daily reading for ${date}. What do the stars, cards, and numbers say about today?`;
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
@@ -37,12 +55,36 @@ export async function POST(req: Request) {
       const runStart = Date.now();
       emit({ type: "run-start", endpoint: "daily", input: parsed.data });
 
+      // ── Cache check ──────────────────────────────────────────────────────────
+      const cacheKey = dailyCacheKey(birthData as Record<string, unknown> | null, date);
+      const { data: cached } = await adminClient
+        .from("daily_reading_cache")
+        .select("content")
+        .eq("cache_key", cacheKey)
+        .single();
+
+      if (cached) {
+        const hit = cached.content as DailyReadingResponse & { experts: Array<Record<string, unknown>>; oracle: Record<string, unknown> };
+        console.log(JSON.stringify({ event: "cache_hit", endpoint: "daily", cacheKey }));
+        for (const expert of hit.experts) {
+          emit({ type: "expert-start", expertId: expert.expertId, expertName: expert.expertName, expertEmoji: expert.expertEmoji, color: expert.color, textColor: expert.textColor });
+          emit({ type: "expert-complete", ...expert });
+        }
+        emit({ type: "oracle-start" });
+        emit({ type: "oracle-complete", oracle: hit.oracle });
+        emit({ type: "run-complete", ...hit, cached: true, totalDurationMs: Date.now() - runStart });
+        controller.close();
+        return;
+      }
+
+      // ── Cache miss: run experts ───────────────────────────────────────────────
+      console.log(JSON.stringify({ event: "cache_miss", endpoint: "daily", cacheKey }));
       const expertPromises = experts.map(async (expert) => {
         emit({ type: "expert-start", expertId: expert.id, expertName: expert.name, expertEmoji: expert.emoji, color: expert.color, textColor: expert.textColor });
         try {
           const tid = EXPERT_ID_TO_TRADITION[expert.id];
           const ctx = tid ? chartContextForTradition(chart, tid) : null;
-          const result = await runSingleExpert(expert, userMessage, birthData, ctx);
+          const result = await runSingleExpert(expert, `Give me my daily reading for ${date}. What do the stars, cards, and numbers say about today?`, birthData, ctx);
           console.log(JSON.stringify({ event: "expert_complete", endpoint: "daily", expertId: expert.id, model: result.model, durationMs: result.durationMs, success: true }));
           emit({ type: "expert-complete", ...result });
           return result;
@@ -66,6 +108,7 @@ export async function POST(req: Request) {
 
       const expertReadings = await Promise.all(expertPromises);
 
+      // ── Oracle synthesis with generateObject ─────────────────────────────────
       const successful = expertReadings.filter((r) => !r.error);
       let oracle: unknown = undefined;
       if (successful.length > 0) {
@@ -81,15 +124,15 @@ export async function POST(req: Request) {
         emit({ type: "oracle-start" });
         const judgeStart = Date.now();
         try {
-          const judgeResult = await generateText({
+          const judgeResult = await generateObject({
             model: openrouter(judgeConfig.model),
             system: judgeSystemPrompt,
             messages: [{ role: "user", content: `Synthesize a daily reading for ${date} in 2-3 sentences.` }],
+            schema: JudgeDailySchema,
           });
-          const parsed = parseJudgeOutput(judgeResult.text);
           oracle = {
-            summary: parsed.summary,
-            oneLiner: parsed.oneLiner,
+            summary: judgeResult.object.summary,
+            oneLiner: judgeResult.object.oneLiner,
             durationMs: Date.now() - judgeStart,
             usage: judgeResult.usage
               ? {
@@ -130,6 +173,13 @@ export async function POST(req: Request) {
       if (!schemaCheck.success) {
         console.error("[daily/stream] Response schema mismatch:", JSON.stringify(schemaCheck.error.flatten()));
       }
+
+      // ── Store to cache ────────────────────────────────────────────────────────
+      await adminClient.from("daily_reading_cache").upsert({
+        cache_key: cacheKey,
+        reading_date: date,
+        content: runComplete,
+      });
 
       const posthog = getPostHogClient();
       posthog.capture({

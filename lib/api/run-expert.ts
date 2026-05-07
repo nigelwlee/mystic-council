@@ -1,10 +1,11 @@
 import { generateText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { loadKnowledge } from "@/lib/knowledge/loader";
-import { formatBirthData, patchToolsWithBirthData, parseStructuredExpert } from "@/lib/orchestrator";
+import { formatBirthData, patchToolsWithBirthData } from "@/lib/orchestrator";
 import { EXPERT_ID_TO_TRADITION } from "@/lib/constants/traditions";
 import { voiceRulesForTradition } from "@/lib/voice";
 import { FORMAT_RULES, sanitizeField } from "@/lib/format";
+import { ExpertContentSchema } from "@/lib/api/schemas";
 import type { BirthData, ExpertConfig } from "@/lib/experts/types";
 import type { ExpertReading } from "@/lib/api/schemas";
 
@@ -22,6 +23,18 @@ OUTPUT FORMAT — STRICT JSON ONLY. All four values MUST be plain text strings �
   "summary": "2-3 sentence reading capturing the essence.",
   "oneLiner": "START with the exact artifact from your tradition — the card name, the transit name, the dasha name, the pillar, the number. Then 4-8 words on what it means right now. Max 15 words total. No intro, no formula. Examples: Tarot → 'Tower reversed. A crisis dissolves before it lands.' Western → 'Mars trines your natal Jupiter. Effort pays off today.' Vedic → 'Mercury antardasha in Saturn mahadasha. Write it down, commit nothing yet.' Chinese → 'Bing Wu day clashes your Geng Metal. Tension at midday, resolve by evening.' Numerology → 'Personal Day 8. Money or power moves are in play.'"
 }`;
+
+function parseExpertJson(text: string, expertId: string): typeof ExpertContentSchema._type {
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error(`Expert ${expertId}: no JSON object in response`);
+  let raw: unknown;
+  try {
+    raw = JSON.parse(jsonMatch[0]);
+  } catch {
+    throw new Error(`Expert ${expertId}: response is not valid JSON`);
+  }
+  return ExpertContentSchema.parse(raw);
+}
 
 export async function runSingleExpert(
   expert: ExpertConfig,
@@ -61,7 +74,7 @@ export async function runSingleExpert(
       ),
     ]);
 
-    const structured = parseStructuredExpert(result.text);
+    const content = parseExpertJson(result.text, expert.id);
     return {
       traditionId: traditionId as ExpertReading["traditionId"],
       expertId: expert.id,
@@ -70,10 +83,10 @@ export async function runSingleExpert(
       color: expert.color,
       textColor: expert.textColor,
       content: {
-        facts: sanitizeField(structured.facts),
-        analysis: sanitizeField(structured.analysis),
-        summary: sanitizeField(structured.summary),
-        oneLiner: sanitizeField(structured.oneLiner),
+        facts: sanitizeField(content.facts),
+        analysis: sanitizeField(content.analysis),
+        summary: sanitizeField(content.summary),
+        oneLiner: sanitizeField(content.oneLiner),
       },
       durationMs: Date.now() - start,
       usage: result.usage

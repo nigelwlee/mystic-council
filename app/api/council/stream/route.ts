@@ -1,6 +1,6 @@
-import { generateText } from "ai";
+import { generateObject } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
-import { parseJudgeOutput } from "@/lib/orchestrator";
+import { z } from "zod";
 import { experts } from "@/lib/experts/registry";
 import { judgeChatConfig as judgeConfig } from "@/lib/experts/judge";
 import { runSingleExpert } from "@/lib/api/run-expert";
@@ -28,6 +28,12 @@ export const maxDuration = 90;
 const openrouter = createOpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
   baseURL: "https://openrouter.ai/api/v1",
+});
+
+const JudgeChatSchema = z.object({
+  oneLiner: z.string().describe("1-2 sentences, conversational, under 30 words. The Oracle's direct answer."),
+  summary: z.string().describe("Plain-spoken reply, 2-3 sentences max."),
+  chimers: z.array(z.enum(["western", "vedic", "chinese", "tarot", "numerology"])).describe("0-2 tradition IDs whose reading most directly addresses the question."),
 });
 
 export async function POST(req: Request) {
@@ -88,7 +94,7 @@ export async function POST(req: Request) {
 
       const expertReadings = await Promise.all(expertPromises);
 
-      // Oracle synthesis
+      // ── Oracle synthesis with generateObject ─────────────────────────────────
       const successful = expertReadings.filter((r) => !r.error);
       let oracle: unknown = undefined;
       if (successful.length > 0) {
@@ -109,16 +115,16 @@ export async function POST(req: Request) {
         emit({ type: "oracle-start" });
         const judgeStart = Date.now();
         try {
-          const judgeResult = await generateText({
+          const judgeResult = await generateObject({
             model: openrouter(judgeConfig.model),
             system: judgeSystemPrompt,
             messages: [{ role: "user", content: question }],
+            schema: JudgeChatSchema,
           });
-          const parsed = parseJudgeOutput(judgeResult.text);
           oracle = {
-            summary: parsed.summary,
-            oneLiner: parsed.oneLiner,
-            chimers: parsed.chimers,
+            summary: judgeResult.object.summary,
+            oneLiner: judgeResult.object.oneLiner,
+            chimers: judgeResult.object.chimers,
             durationMs: Date.now() - judgeStart,
             usage: judgeResult.usage
               ? {
@@ -136,6 +142,7 @@ export async function POST(req: Request) {
           oracle = {
             summary: "The council was unable to synthesize a verdict.",
             oneLiner: err instanceof Error ? err.message : String(err),
+            chimers: [],
             durationMs: Date.now() - judgeStart,
             systemPrompt: judgeSystemPrompt,
             model: judgeConfig.model,
