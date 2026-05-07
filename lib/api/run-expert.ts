@@ -1,13 +1,13 @@
-import { generateText } from "ai";
+import { generateText, generateObject } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { z } from "zod";
 import { loadKnowledge } from "@/lib/knowledge/loader";
 import { EXPERT_ID_TO_TRADITION } from "@/lib/constants/traditions";
-import { voiceRulesForTradition } from "@/lib/voice";
+import { VOICE_RULES, voiceRulesForTradition } from "@/lib/voice";
 import { FORMAT_RULES, sanitizeField } from "@/lib/format";
 import { ExpertContentSchema } from "@/lib/api/schemas";
 import type { BirthData, ExpertConfig } from "@/lib/experts/types";
-import type { ExpertReading } from "@/lib/api/schemas";
+import type { ExpertReading, Oracle } from "@/lib/api/schemas";
 import type { CoreTool } from "ai";
 
 const openrouter = createOpenAI({
@@ -162,6 +162,96 @@ export async function runSingleExpert(
       systemPrompt,
       model: expert.model,
       userMessage: finalUserMessage,
+    };
+  }
+}
+
+// ─── Shared judge schema ──────────────────────────────────────────────────────
+
+const JudgeOutputSchema = z.object({
+  summary: z.string(),
+  oneLiner: z.string(),
+});
+
+export interface SynthesizeOpts {
+  /** The judge config to use (defaults to judgeConfig from lib/experts/judge). */
+  judgeConfig: { model: string; systemPromptTemplate: string };
+  /**
+   * The user-facing message to pass to the judge (e.g. the question or a
+   * standard daily synthesis prompt).
+   */
+  userMessage: string;
+  /**
+   * Optional framing paragraph to append after the expert outputs block
+   * (used by the chat route to inject the prior daily reading context).
+   */
+  priorFrame?: string | null;
+}
+
+/**
+ * Synthesize expert readings into an Oracle verdict.
+ *
+ * Extracts the judge synthesis logic that was previously inlined in every API
+ * route. Returns a fully-typed `Oracle` object so callers do not need to repeat
+ * the `generateObject` boilerplate.
+ *
+ * Falls back gracefully — if the LLM call fails the returned `Oracle` still has
+ * `summary` and `oneLiner` fields populated with a human-readable error.
+ */
+export async function synthesize(
+  expertReadings: ExpertReading[],
+  opts: SynthesizeOpts,
+): Promise<Oracle> {
+  const successful = expertReadings.filter((r) => !r.error);
+
+  const expertOutputs = successful
+    .map((r) => {
+      const parts = [`### ${r.expertName}`];
+      if (r.content.facts) parts.push(`**Facts:** ${r.content.facts}`);
+      parts.push(r.content.analysis);
+      return parts.join("\n");
+    })
+    .join("\n\n---\n\n");
+
+  const judgeSystemPrompt =
+    opts.judgeConfig.systemPromptTemplate.replace("{expertOutputs}", expertOutputs) +
+    (opts.priorFrame ?? "") +
+    "\n\n" + VOICE_RULES +
+    "\n\n" + FORMAT_RULES;
+
+  const judgeStart = Date.now();
+
+  try {
+    const judgeResult = await generateObject({
+      model: openrouter(opts.judgeConfig.model),
+      system: judgeSystemPrompt,
+      messages: [{ role: "user", content: opts.userMessage }],
+      schema: JudgeOutputSchema,
+    });
+
+    return {
+      summary: judgeResult.object.summary,
+      oneLiner: judgeResult.object.oneLiner,
+      durationMs: Date.now() - judgeStart,
+      usage: judgeResult.usage
+        ? {
+            promptTokens: judgeResult.usage.promptTokens,
+            completionTokens: judgeResult.usage.completionTokens,
+            totalTokens: judgeResult.usage.totalTokens,
+          }
+        : undefined,
+      systemPrompt: judgeSystemPrompt,
+      model: opts.judgeConfig.model,
+      userMessage: opts.userMessage,
+    };
+  } catch (err) {
+    return {
+      summary: "The council was unable to synthesize a verdict.",
+      oneLiner: err instanceof Error ? err.message : String(err),
+      durationMs: Date.now() - judgeStart,
+      systemPrompt: judgeSystemPrompt,
+      model: opts.judgeConfig.model,
+      userMessage: opts.userMessage,
     };
   }
 }
