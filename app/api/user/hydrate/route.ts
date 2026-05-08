@@ -13,7 +13,9 @@ export async function GET() {
     return NextResponse.json({ user: null, birthData: null, todayReading: null });
   }
 
-  const [bdResult, readingResult, streakResult] = await Promise.all([
+  const today = todayStr();
+
+  const [bdResult, readingResult, streakResult, chatResult] = await Promise.all([
     supabase
       .from("birth_data")
       .select("name, birthdate, birthtime, birthplace, latitude, longitude")
@@ -24,14 +26,26 @@ export async function GET() {
       .select("output")
       .eq("user_id", user.id)
       .eq("kind", "daily")
-      .eq("reading_date", todayStr())
+      .eq("reading_date", today)
       .maybeSingle(),
     supabase
       .from("daily_streaks")
       .select("current_streak, longest_streak")
       .eq("user_id", user.id)
       .maybeSingle(),
+    supabase
+      .from("chat_messages")
+      .select("role, content, created_at")
+      .eq("user_id", user.id)
+      .eq("chat_date", today)
+      .order("created_at", { ascending: true }),
   ]);
+
+  const chatHistory = (chatResult.data ?? []).map((row) => ({
+    role: row.role as "user" | "assistant",
+    content: row.content,
+    createdAt: row.created_at,
+  }));
 
   return NextResponse.json({
     user: { id: user.id, email: user.email },
@@ -40,5 +54,6 @@ export async function GET() {
     streak: streakResult.data
       ? { current: streakResult.data.current_streak, longest: streakResult.data.longest_streak }
       : null,
+    chatHistory,
   });
 }
