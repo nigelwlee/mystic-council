@@ -112,7 +112,13 @@ export function useProtoStore() {
     // Hydrate from server — uses cookie-based session, avoids browser client auth issues
     fetch("/api/user/hydrate")
       .then((r) => r.json())
-      .then((data: { user: { id: string } | null; birthData: Record<string, unknown> | null; todayReading: unknown; streak: ProtoStreak | null }) => {
+      .then((data: {
+        user: { id: string } | null;
+        birthData: Record<string, unknown> | null;
+        todayReading: unknown;
+        streak: ProtoStreak | null;
+        chatHistory?: Array<{ role: "user" | "assistant"; content: string; createdAt: string }>;
+      }) => {
         if (!data.user) {
           setReady(true);
           return;
@@ -139,6 +145,36 @@ export function useProtoStore() {
 
           if (data.streak) {
             next = { ...next, streak: data.streak };
+          }
+
+          if (data.chatHistory && data.chatHistory.length > 0) {
+            // Reconstruct ProtoChatEntry[] from flat role/content pairs.
+            // Messages are ordered oldest-first; pair consecutive user+assistant rows into entries.
+            const hydratedEntries: ProtoChatEntry[] = [];
+            const msgs = data.chatHistory;
+            let i = 0;
+            while (i < msgs.length) {
+              const msg = msgs[i]!;
+              if (msg.role === "user") {
+                const assistantMsg = msgs[i + 1]?.role === "assistant" ? msgs[i + 1]! : null;
+                const ts = new Date(msg.createdAt).getTime();
+                hydratedEntries.push({
+                  id: crypto.randomUUID(),
+                  ts,
+                  durationMs: 0,
+                  q: msg.content,
+                  oracle: assistantMsg
+                    ? { oneLiner: assistantMsg.content, summary: assistantMsg.content }
+                    : null,
+                  experts: [],
+                });
+                i += assistantMsg ? 2 : 1;
+              } else {
+                i += 1;
+              }
+            }
+            // Store newest-first to match existing convention
+            next = { ...next, chatHistory: hydratedEntries.reverse() };
           }
 
           save(next);
@@ -202,8 +238,24 @@ export function useProtoStore() {
   );
 
   const addChatEntry = useCallback(
-    (entry: ProtoChatEntry) =>
-      setStore((s) => ({ ...s, chatHistory: [entry, ...s.chatHistory].slice(0, 50) })),
+    (entry: ProtoChatEntry) => {
+      setStore((s) => ({ ...s, chatHistory: [entry, ...s.chatHistory].slice(0, 50) }));
+
+      // Persist to Supabase best-effort — fire and forget, no user-visible error on failure
+      const persistMessage = (role: "user" | "assistant", content: string) => {
+        fetch("/api/user/chat-message", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ role, content }),
+        }).catch((err) => console.error("[ProtoStore] chat-message write error:", err));
+      };
+
+      persistMessage("user", entry.q);
+      const assistantContent = entry.oracle?.summary || entry.oracle?.oneLiner || entry.error || "";
+      if (assistantContent) {
+        persistMessage("assistant", assistantContent);
+      }
+    },
     [setStore],
   );
 
