@@ -97,6 +97,89 @@ function buildAntardasha(mahadasha: string, mahaStart: number, mahaEnd: number):
   return result;
 }
 
+type VedicChartResult = Awaited<ReturnType<typeof _computeVedicChart>>;
+const vedicChartCache = new Map<string, VedicChartResult>();
+
+function _evictIfFull(cache: Map<string, unknown>) {
+  if (cache.size >= 100) {
+    cache.delete(cache.keys().next().value as string);
+  }
+}
+
+async function _computeVedicChart(date: string, time: string | undefined, latitude: number | undefined, longitude: number | undefined) {
+  const [year, month, day] = date.split("-").map(Number);
+  const [hour, minute] = time ? time.split(":").map(Number) : [12, 0];
+  const dateObj = new Date(Date.UTC(year!, month! - 1, day!, hour, minute));
+  const ayanamsa = getLahiriAyanamsa(year!);
+
+  const bodies = [Body.Sun, Body.Moon, Body.Mercury, Body.Venus, Body.Mars, Body.Jupiter, Body.Saturn];
+  const chart: Record<string, { rashi: string; degree: number; siderealLon: number }> = {};
+
+  for (const body of bodies) {
+    try {
+      const tropical = EclipticLongitude(body, dateObj);
+      const sidereal = siderealLon(tropical, year!);
+      const signIndex = Math.floor(sidereal / 30);
+      chart[String(body)] = {
+        rashi: SIGNS[signIndex] ?? "Unknown",
+        degree: Math.round((sidereal % 30) * 10) / 10,
+        siderealLon: Math.round(sidereal * 100) / 100,
+      };
+    } catch {
+      // skip
+    }
+  }
+
+  const moonSidereal = chart["Moon"]?.siderealLon ?? 0;
+  const nakshatraSpan = 360 / 27;
+  const nakIdx = Math.floor(moonSidereal / nakshatraSpan);
+  const nakshatra = NAKSHATRAS[nakIdx] ?? NAKSHATRAS[0]!;
+  const degreeInNak = moonSidereal % nakshatraSpan;
+  const fractionElapsed = degreeInNak / nakshatraSpan;
+  const pada = Math.min(4, Math.floor(degreeInNak / (nakshatraSpan / 4)) + 1);
+  const ruler = nakshatra.ruler;
+  const totalDasha = DASHA_YEARS[ruler] ?? 7;
+  const yearsRemaining = totalDasha - fractionElapsed * totalDasha;
+
+  const birthYear = year! + (month! - 1) / 12;
+  const dashaSequence: { planet: string; start: number; end: number }[] = [];
+  const startIdx = DASHA_ORDER.indexOf(ruler);
+  let currentYear = birthYear - fractionElapsed * totalDasha;
+  for (let i = 0; i < 9; i++) {
+    const planet = DASHA_ORDER[(startIdx + i) % 9]!;
+    const duration = DASHA_YEARS[planet] ?? 7;
+    dashaSequence.push({ planet, start: Math.round(currentYear * 10) / 10, end: Math.round((currentYear + duration) * 10) / 10 });
+    currentYear += duration;
+  }
+
+  const now = new Date();
+  const currentYearDecimal = now.getFullYear() + now.getMonth() / 12;
+  const currentMaha = dashaSequence.find(d => d.start <= currentYearDecimal && d.end > currentYearDecimal) ?? dashaSequence[0]!;
+  const antardasha = buildAntardasha(currentMaha.planet, currentMaha.start, currentMaha.end);
+  const currentAntar = antardasha.find(d => d.start <= currentYearDecimal && d.end > currentYearDecimal) ?? antardasha[0]!;
+
+  const lagna = (latitude !== undefined && longitude !== undefined && time)
+    ? computeLagna(year!, month!, day!, hour!, minute!, latitude, longitude, ayanamsa)
+    : null;
+
+  return {
+    planets: chart,
+    nakshatra: {
+      name: nakshatra.name,
+      ruler: nakshatra.ruler,
+      deity: nakshatra.deity,
+      pada,
+      degreeInNakshatra: Math.round(degreeInNak * 10) / 10,
+    },
+    ayanamsa: Math.round(ayanamsa * 100) / 100,
+    lagna,
+    currentDasha: { planet: ruler, yearsRemaining: Math.round(yearsRemaining * 10) / 10 },
+    currentAntardasha: { mahadasha: currentMaha.planet, antardasha: currentAntar.planet, endsYear: currentAntar.end },
+    dashaSequence: dashaSequence.slice(0, 4),
+    antardasha: antardasha.slice(0, 5),
+  };
+}
+
 const vedicChartSchema = z.object({
   date: z.string().describe("Birth date in YYYY-MM-DD format"),
   time: z.string().optional().describe("Birth time in HH:mm (24h) format"),
@@ -110,80 +193,14 @@ export const vedicAstrologyTools = {
       "Calculate Vedic (Jyotish) sidereal planetary positions using the Lahiri ayanamsa. Determines rashi (sign), nakshatra, lagna, and current Vimshottari dasha with antardasha.",
     parameters: vedicChartSchema,
     execute: async ({ date, time, latitude, longitude }: z.infer<typeof vedicChartSchema>) => {
-      const [year, month, day] = date.split("-").map(Number);
-      const [hour, minute] = time ? time.split(":").map(Number) : [12, 0];
-      const dateObj = new Date(Date.UTC(year!, month! - 1, day!, hour, minute));
-      const ayanamsa = getLahiriAyanamsa(year!);
+      const cacheKey = `${date}|${time ?? ""}|${latitude ?? ""}|${longitude ?? ""}`;
+      const cached = vedicChartCache.get(cacheKey);
+      if (cached) return cached;
 
-      const bodies = [Body.Sun, Body.Moon, Body.Mercury, Body.Venus, Body.Mars, Body.Jupiter, Body.Saturn];
-      const chart: Record<string, { rashi: string; degree: number; siderealLon: number }> = {};
-
-      for (const body of bodies) {
-        try {
-          const tropical = EclipticLongitude(body, dateObj);
-          const sidereal = siderealLon(tropical, year!);
-          const signIndex = Math.floor(sidereal / 30);
-          chart[String(body)] = {
-            rashi: SIGNS[signIndex] ?? "Unknown",
-            degree: Math.round((sidereal % 30) * 10) / 10,
-            siderealLon: Math.round(sidereal * 100) / 100,
-          };
-        } catch {
-          // skip
-        }
-      }
-
-      const moonSidereal = chart["Moon"]?.siderealLon ?? 0;
-      const nakshatraSpan = 360 / 27; // 13.333...°
-      const nakIdx = Math.floor(moonSidereal / nakshatraSpan);
-      const nakshatra = NAKSHATRAS[nakIdx] ?? NAKSHATRAS[0]!;
-      const degreeInNak = moonSidereal % nakshatraSpan;
-      const fractionElapsed = degreeInNak / nakshatraSpan;
-      // Pada: each nakshatra has 4 quarters of 3°20' each
-      const pada = Math.min(4, Math.floor(degreeInNak / (nakshatraSpan / 4)) + 1);
-      const ruler = nakshatra.ruler;
-      const totalDasha = DASHA_YEARS[ruler] ?? 7;
-      const yearsRemaining = totalDasha - fractionElapsed * totalDasha;
-
-      const birthYear = year! + (month! - 1) / 12;
-      const dashaSequence: { planet: string; start: number; end: number }[] = [];
-      const startIdx = DASHA_ORDER.indexOf(ruler);
-      let currentYear = birthYear - fractionElapsed * totalDasha;
-      for (let i = 0; i < 9; i++) {
-        const planet = DASHA_ORDER[(startIdx + i) % 9]!;
-        const duration = DASHA_YEARS[planet] ?? 7;
-        dashaSequence.push({ planet, start: Math.round(currentYear * 10) / 10, end: Math.round((currentYear + duration) * 10) / 10 });
-        currentYear += duration;
-      }
-
-      // Current mahadasha antardasha
-      const now = new Date();
-      const currentYearDecimal = now.getFullYear() + now.getMonth() / 12;
-      const currentMaha = dashaSequence.find(d => d.start <= currentYearDecimal && d.end > currentYearDecimal) ?? dashaSequence[0]!;
-      const antardasha = buildAntardasha(currentMaha.planet, currentMaha.start, currentMaha.end);
-      const currentAntar = antardasha.find(d => d.start <= currentYearDecimal && d.end > currentYearDecimal) ?? antardasha[0]!;
-
-      // Lagna (sidereal ASC)
-      const lagna = (latitude !== undefined && longitude !== undefined && time)
-        ? computeLagna(year!, month!, day!, hour!, minute!, latitude, longitude, ayanamsa)
-        : null;
-
-      return {
-        planets: chart,
-        nakshatra: {
-          name: nakshatra.name,
-          ruler: nakshatra.ruler,
-          deity: nakshatra.deity,
-          pada,
-          degreeInNakshatra: Math.round(degreeInNak * 10) / 10,
-        },
-        ayanamsa: Math.round(ayanamsa * 100) / 100,
-        lagna,
-        currentDasha: { planet: ruler, yearsRemaining: Math.round(yearsRemaining * 10) / 10 },
-        currentAntardasha: { mahadasha: currentMaha.planet, antardasha: currentAntar.planet, endsYear: currentAntar.end },
-        dashaSequence: dashaSequence.slice(0, 4),
-        antardasha: antardasha.slice(0, 5),
-      };
+      const result = await _computeVedicChart(date, time, latitude, longitude);
+      _evictIfFull(vedicChartCache);
+      vedicChartCache.set(cacheKey, result);
+      return result;
     },
   }),
 };
