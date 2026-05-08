@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { usePostHog } from "posthog-js/react";
 import { useProtoStore } from "@/lib/hooks/use-proto-store";
 import { ReadTab } from "@/components/daily/ReadTab";
+import { MeTab } from "@/components/daily/MeTab";
 
 const BG = "#0A0B14";
 const MUTED = "rgba(245,240,232,0.35)";
@@ -23,12 +24,21 @@ function formatDate(d: string): string {
   });
 }
 
+type Tab = "read" | "chat" | "me";
+
+const TAB_LABELS: { id: Tab; label: string }[] = [
+  { id: "read", label: "Read" },
+  { id: "chat", label: "Chat" },
+  { id: "me", label: "Me" },
+];
+
 export default function DailyPage() {
   const router = useRouter();
   const { store, ready, clearCache } = useProtoStore();
   const streak = store.streak;
   const posthog = usePostHog();
   const date = today();
+  const [activeTab, setActiveTab] = useState<Tab>("read");
   const [readingDone, setReadingDone] = useState(false);
   // Key used to force ReadTab to re-mount when the user refreshes
   const [tabKey, setTabKey] = useState(0);
@@ -48,8 +58,8 @@ export default function DailyPage() {
     setTabKey((k) => k + 1);
   };
 
-  const handleLoad = () => {
-    posthog?.capture("daily_reading_loaded", { date });
+  const handleLoad = (loadedDate: string) => {
+    posthog?.capture("daily_reading_loaded", { date: loadedDate });
     setReadingDone(true);
   };
 
@@ -132,13 +142,62 @@ export default function DailyPage() {
         </button>
       </div>
 
-      {/* Read tab — daily reading preview + expand */}
-      <div style={{ flex: 1 }}>
-        <ReadTab key={tabKey} onLoad={handleLoad} />
+      {/* Tab bar */}
+      <div
+        style={{
+          display: "flex",
+          borderBottom: "1px solid rgba(245,240,232,0.08)",
+          marginBottom: 0,
+          gap: 0,
+        }}
+      >
+        {TAB_LABELS.map((tab) => {
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => {
+                if (tab.id === "chat") {
+                  router.push("/chat");
+                  return;
+                }
+                setActiveTab(tab.id);
+                posthog?.capture("daily_tab_switched", { tab: tab.id });
+              }}
+              style={{
+                flex: 1,
+                background: "none",
+                border: "none",
+                borderBottom: isActive
+                  ? `2px solid ${ACCENT}`
+                  : "2px solid transparent",
+                cursor: "pointer",
+                padding: "10px 0",
+                fontSize: 11,
+                letterSpacing: "0.14em",
+                textTransform: "uppercase",
+                fontFamily: "var(--font-geist-mono), monospace",
+                color: isActive ? ACCENT : MUTED,
+                fontWeight: isActive ? 600 : 400,
+                marginBottom: -1,
+              }}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
       </div>
 
-      {/* Sticky CTA — shown after reading loads */}
-      {readingDone && (
+      {/* Tab content */}
+      <div style={{ flex: 1, overflowY: "auto" }}>
+        {activeTab === "read" && (
+          <ReadTab key={tabKey} onLoad={handleLoad} />
+        )}
+        {activeTab === "me" && <MeTab />}
+      </div>
+
+      {/* Sticky CTA — shown after reading loads on Read tab */}
+      {readingDone && activeTab === "read" && (
         <div
           style={{
             position: "sticky",
