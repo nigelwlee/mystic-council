@@ -13,6 +13,14 @@ AI-powered mystical advisory council combining Western astrology, Vedic astrolog
   - Project ID: `ebeb5e1c-2de9-4611-9839-e2b5455193be`
   - Team ID: `60c3eaa5-1b82-4495-8ec0-2f97fbfe2e4e`
 
+## Monorepo layout
+
+This repo contains two products:
+- **Web/API** (repo root) — Next.js app deployed to Vercel. `/app/api/*` routes are the shared backend for both web and mobile.
+- **Mobile** (`/mobile`) — Expo/React Native iOS app. See `mobile/CLAUDE.md` for mobile-specific rules. Run from the `/mobile` directory; Vercel ignores it via `.vercelignore`.
+
+Cross-cutting changes (e.g., API schema changes) should update both sides in a single commit.
+
 ## Development Workflow
 
 Every change follows this loop:
