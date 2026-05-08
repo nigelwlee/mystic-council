@@ -6,8 +6,8 @@ export const BirthDataSchema = z.object({
   name: z.string().optional(),
   date: z.string().optional(),
   time: z.string().optional(),
-  latitude: z.number().optional(),
-  longitude: z.number().optional(),
+  latitude: z.number().nullish(),
+  longitude: z.number().nullish(),
   location: z.string().optional(),
 });
 

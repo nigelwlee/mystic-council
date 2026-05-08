@@ -35,6 +35,21 @@ export async function POST(req: Request) {
   const { birthData, date, chart } = parsed.data;
   const start = Date.now();
 
+  // Geocode birth location if lat/lng missing (mobile sends null from DB when not yet geocoded)
+  if (birthData && !birthData.latitude && !birthData.longitude && birthData.location) {
+    try {
+      const geoRes = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(birthData.location)}`,
+        { headers: { "Accept-Language": "en", "User-Agent": "mystic-council/1.0" } }
+      );
+      const geoData = await geoRes.json() as { lat: string; lon: string }[];
+      if (geoData[0]) {
+        birthData.latitude = parseFloat(parseFloat(geoData[0].lat).toFixed(4));
+        birthData.longitude = parseFloat(parseFloat(geoData[0].lon).toFixed(4));
+      }
+    } catch { /* non-fatal: experts degrade gracefully without coordinates */ }
+  }
+
   // Resolve authenticated user (if any) via Supabase session cookie
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
