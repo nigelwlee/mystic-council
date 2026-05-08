@@ -2,7 +2,7 @@ import { generateObject } from "ai";
 import { z } from "zod";
 import { createOpenAI } from "@ai-sdk/openai";
 import { experts } from "@/lib/experts/registry";
-import { judgeConfig } from "@/lib/experts/judge";
+import { judgeConfig, loadJudgePrompt } from "@/lib/experts/judge";
 import { runSingleExpert, synthesize } from "@/lib/api/run-expert";
 import { mockExpertResponses, mockJudgeVerdict } from "@/lib/mock-data";
 import { EXPERT_ID_TO_TRADITION } from "@/lib/constants/traditions";
@@ -82,8 +82,10 @@ export async function POST(req: Request) {
   const successful = expertReadings.filter((r) => !r.error);
 
   const priorFrame = dailyPriorFrame(dailyReading);
+  const judgePrompt = await loadJudgePrompt();
   const oracle = await synthesize(expertReadings, {
     judgeConfig,
+    systemPromptTemplate: judgePrompt,
     userMessage: question,
     priorFrame,
   });
@@ -104,7 +106,7 @@ export async function POST(req: Request) {
         numerology: z.string().optional(),
       }).describe("One short sentence per tradition capturing their key daily insight"),
     });
-    const digestSystemPrompt = judgeConfig.systemPromptTemplate.replace(
+    const digestSystemPrompt = judgePrompt.replace(
       "{expertOutputs}",
       oneLinerOutputs,
     );

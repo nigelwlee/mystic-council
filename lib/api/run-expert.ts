@@ -1,7 +1,7 @@
 import { generateText, generateObject } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { z } from "zod";
-import { loadKnowledge } from "@/lib/knowledge/loader";
+import { loadKnowledge, loadSystemPrompt } from "@/lib/knowledge/loader";
 import { EXPERT_ID_TO_TRADITION } from "@/lib/constants/traditions";
 import { VOICE_RULES, voiceRulesForTradition } from "@/lib/voice";
 import { FORMAT_RULES, sanitizeField } from "@/lib/format";
@@ -89,14 +89,17 @@ export async function runSingleExpert(
   birthData: BirthData | null,
   chartContext?: string | null,
 ): Promise<ExpertReading & { durationMs: number }> {
-  const knowledge = await loadKnowledge(expert.knowledgePath);
+  const [knowledge, promptTemplate] = await Promise.all([
+    loadKnowledge(expert.knowledgePath),
+    loadSystemPrompt(expert.knowledgePath),
+  ]);
   const birthDataStr = formatBirthData(birthData);
 
   const traditionId = EXPERT_ID_TO_TRADITION[expert.id];
   if (!traditionId) throw new Error(`Unknown expertId: ${expert.id}`);
 
   const systemPrompt =
-    expert.systemPromptTemplate
+    promptTemplate
       .replace("{knowledge}", knowledge)
       .replace("{birthData}", birthDataStr) +
     "\n\n" + voiceRulesForTradition(traditionId) +
@@ -174,8 +177,9 @@ const JudgeOutputSchema = z.object({
 });
 
 export interface SynthesizeOpts {
-  /** The judge config to use (defaults to judgeConfig from lib/experts/judge). */
-  judgeConfig: { model: string; systemPromptTemplate: string };
+  judgeConfig: { model: string };
+  /** Resolved system prompt template string with {expertOutputs} placeholder. */
+  systemPromptTemplate: string;
   /**
    * The user-facing message to pass to the judge (e.g. the question or a
    * standard daily synthesis prompt).
@@ -214,7 +218,7 @@ export async function synthesize(
     .join("\n\n---\n\n");
 
   const judgeSystemPrompt =
-    opts.judgeConfig.systemPromptTemplate.replace("{expertOutputs}", expertOutputs) +
+    opts.systemPromptTemplate.replace("{expertOutputs}", expertOutputs) +
     (opts.priorFrame ?? "") +
     "\n\n" + VOICE_RULES +
     "\n\n" + FORMAT_RULES;
