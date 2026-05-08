@@ -54,7 +54,8 @@ export function westernHeadline(d: Record<string, unknown>): string | null {
 }
 
 export function vedicHeadline(d: Record<string, unknown>): string | null {
-  const lagna = d.lagna as string | undefined;
+  const lagnaObj = d.lagna as { sign?: string } | null | undefined;
+  const lagna = lagnaObj?.sign;
   const nakObj = d.nakshatra as Record<string, unknown> | undefined;
   const nak = nakObj?.name as string | undefined;
   if (!lagna && !nak) return null;
@@ -84,4 +85,40 @@ export function numerologyHeadline(d: Record<string, unknown>): string | null {
   if (lp != null) parts.push(`Life Path ${lp}`);
   if (expr != null) parts.push(`Expression ${expr}`);
   return parts.join(' · ');
+}
+
+// Tarot birth cards — Soul + Personality from birthdate (Angeles Arrien method)
+
+const MAJOR_ARCANA = [
+  'The Fool', 'The Magician', 'The High Priestess', 'The Empress', 'The Emperor',
+  'The Hierophant', 'The Lovers', 'The Chariot', 'Strength', 'The Hermit',
+  'Wheel of Fortune', 'Justice', 'The Hanged Man', 'Death', 'Temperance',
+  'The Devil', 'The Tower', 'The Star', 'The Moon', 'The Sun', 'Judgement', 'The World',
+];
+
+export interface TarotBirthCards {
+  personality: { number: number; name: string };
+  soul: { number: number; name: string };
+}
+
+export function computeTarotBirthCards(birthdate: string): TarotBirthCards | null {
+  const digits = birthdate.replace(/-/g, '').split('').map(Number);
+  if (digits.length !== 8 || digits.some(isNaN)) return null;
+  const total = digits.reduce((a, b) => a + b, 0);
+  const personality = total > 22 ? total - 22 : total;
+  let soul = personality;
+  while (soul > 9 && soul !== 22) {
+    soul = String(soul).split('').map(Number).reduce((a, b) => a + b, 0);
+  }
+  const arcana = (n: number) => MAJOR_ARCANA[n % 22]!;
+  return {
+    personality: { number: personality, name: arcana(personality) },
+    soul: { number: soul, name: arcana(soul) },
+  };
+}
+
+export function tarotHeadline(c: TarotBirthCards): string {
+  return c.soul.number === c.personality.number
+    ? c.soul.name
+    : `${c.soul.name} · ${c.personality.name}`;
 }

@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import {
   fetchChart, westernHeadline, vedicHeadline, chineseHeadline, numerologyHeadline,
+  computeTarotBirthCards, tarotHeadline,
 } from '../../lib/chart-api';
 import type { Database } from '../../lib/database.types';
 import type { MobileChartData } from '../../lib/chart-api';
@@ -156,6 +157,8 @@ export default function MeTab() {
     await supabase.auth.signOut();
   }
 
+  const tarotCards = profile?.birthdate ? computeTarotBirthCards(profile.birthdate) : null;
+
   const lat = profile?.latitude;
   const lng = profile?.longitude;
   const latLngText = lat != null && lng != null
@@ -294,6 +297,17 @@ export default function MeTab() {
                   headline={chart.traditions.numerology ? numerologyHeadline(chart.traditions.numerology) : null}
                   data={chart.traditions.numerology ?? null}
                 />
+                {tarotCards && (
+                  <ChartRow
+                    emoji="🃏"
+                    label="Tarot"
+                    headline={tarotHeadline(tarotCards)}
+                    data={{
+                      'Soul Card': `${tarotCards.soul.name} (${tarotCards.soul.number})`,
+                      'Personality Card': `${tarotCards.personality.name} (${tarotCards.personality.number})`,
+                    }}
+                  />
+                )}
               </View>
             )}
           </>
