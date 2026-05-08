@@ -60,22 +60,17 @@ export default function OnboardingScreen() {
     setError('');
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const { error: insertError } = await supabase.from('birth_data').insert({
-        user_id: session!.user.id,
-        name: name.trim(),
-        birthdate: buildDateStr(),
-        birthtime: buildTimeStr(),
-        birthplace: birthplace.trim(),
-      });
-      if (insertError) {
-        if (insertError.code === '23505') {
-          // Row already exists — routing gate missed it (e.g. missing SELECT RLS policy).
-          // The user has data; proceed to tabs.
-          router.replace('/(tabs)');
-          return;
-        }
-        throw insertError;
-      }
+      const { error: insertError } = await supabase.from('birth_data').upsert(
+        {
+          user_id: session!.user.id,
+          name: name.trim(),
+          birthdate: buildDateStr(),
+          birthtime: buildTimeStr(),
+          birthplace: birthplace.trim(),
+        },
+        { onConflict: 'user_id' }
+      );
+      if (insertError) throw insertError;
       router.replace('/(tabs)');
     } catch (e: any) {
       setError(e.message ?? 'Failed to save. Please try again.');
