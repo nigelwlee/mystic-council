@@ -1,6 +1,6 @@
 import type { ProtoExpertReading, ProtoOracle } from "@/lib/hooks/use-proto-store";
 
-export const mockDailyExperts: ProtoExpertReading[] = [
+export const mockDailyExperts = [
   {
     expertId: "stella",
     expertName: "Stella",
@@ -77,7 +77,7 @@ export const mockDailyExperts: ProtoExpertReading[] = [
         "You are in a year of necessary recalibration — what shifts now opens the door to deep belonging in your next cycle.",
     },
   },
-];
+] satisfies ProtoExpertReading[];
 
 export const mockDailyOracle: ProtoOracle = {
   oneLiner: "You are in a builder's season — do the work, prepare the cup, and the opening will find you ready.",

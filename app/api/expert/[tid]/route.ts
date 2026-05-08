@@ -45,24 +45,13 @@ export async function POST(
 
   if (IS_MOCK_MODE) {
     await mockDelay(300, 600);
-    const mock = mockExpertResponses.find((r) => EXPERT_ID_TO_TRADITION[r.expertId] === tid);
+    const mock = mockExpertResponses.find((r) => r.traditionId === tid);
     if (mock) {
       const result: ExpertOnly = {
         id: crypto.randomUUID(),
         generatedAt: new Date().toISOString(),
         input: parsed,
-        expert: {
-          traditionId: tid as ExpertReading["traditionId"],
-          expertId: mock.expertId,
-          expertName: mock.expertName,
-          expertEmoji: mock.expertEmoji,
-          color: mock.color,
-          textColor: mock.textColor,
-          content: typeof mock.content === "string"
-            ? { facts: "", analysis: "", summary: mock.content, oneLiner: mock.content }
-            : mock.content,
-          durationMs: 400,
-        },
+        expert: { ...mock, durationMs: 400 },
         totalDurationMs: Date.now() - start,
       };
       return Response.json(result);

@@ -1,11 +1,11 @@
-import type { ExpertResponse } from "./experts/types";
+import type { ExpertReading, Oracle } from "@/lib/api/schemas";
 
-export const mockExpertResponses: ExpertResponse[] = [
+export const mockExpertResponses: ExpertReading[] = [
   {
+    traditionId: "western",
     expertId: "stella",
     expertName: "Stella",
     expertEmoji: "✦",
-    expertTitle: "Western Astrologer",
     color: "#6366f1",
     textColor: "text-indigo-400",
     content: {
@@ -16,10 +16,10 @@ export const mockExpertResponses: ExpertResponse[] = [
     },
   },
   {
+    traditionId: "chinese",
     expertId: "master-wei",
     expertName: "Master Wei",
     expertEmoji: "☯",
-    expertTitle: "Chinese Astrologer",
     color: "#dc2626",
     textColor: "text-red-400",
     content: {
@@ -30,10 +30,10 @@ export const mockExpertResponses: ExpertResponse[] = [
     },
   },
   {
+    traditionId: "vedic",
     expertId: "priya",
     expertName: "Priya",
     expertEmoji: "🪬",
-    expertTitle: "Vedic Astrologer",
     color: "#d97706",
     textColor: "text-amber-400",
     content: {
@@ -44,10 +44,10 @@ export const mockExpertResponses: ExpertResponse[] = [
     },
   },
   {
+    traditionId: "tarot",
     expertId: "madame-crow",
     expertName: "Madame Crow",
     expertEmoji: "🃏",
-    expertTitle: "Tarot Reader",
     color: "#7c3aed",
     textColor: "text-violet-400",
     content: {
@@ -58,10 +58,10 @@ export const mockExpertResponses: ExpertResponse[] = [
     },
   },
   {
+    traditionId: "numerology",
     expertId: "pythia",
     expertName: "Pythia",
     expertEmoji: "∞",
-    expertTitle: "Numerologist",
     color: "#059669",
     textColor: "text-emerald-400",
     content: {
@@ -73,7 +73,7 @@ export const mockExpertResponses: ExpertResponse[] = [
   },
 ];
 
-export const mockJudgeVerdict: { summary: string; oneLiner: string } = {
+export const mockJudgeVerdict: Oracle = {
   summary: "The council speaks with unusual coherence. Every tradition — the Eight of Pentacles, Saturn in the 10th, the Water Dog building steadily, Life Path 7 — describes the same person doing careful, patient work that compounds over time. The Tower reversed and Sun-Pluto conjunction both point to a necessary clearing that created space for what's now being built. An opening is coming: the Ace of Cups, Jupiter Mahadasha, the 5 year making way for the 6 — and it will require you to be both skilled enough to receive it and open enough not to deflect it.",
   oneLiner: "You are in a builder's season — do the work, prepare the cup, and the opening will find you ready.",
 };
