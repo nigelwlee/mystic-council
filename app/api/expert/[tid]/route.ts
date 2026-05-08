@@ -4,16 +4,13 @@ import { EXPERT_ID_TO_TRADITION } from "@/lib/constants/traditions";
 import { mockExpertResponses } from "@/lib/mock-data";
 import { ContextInputSchema, QuestionInputSchema } from "@/lib/api/schemas";
 import type { ExpertOnly, ExpertReading } from "@/lib/api/schemas";
+import { IS_MOCK_MODE, mockDelay } from "@/lib/mock";
 
 export const maxDuration = 30;
 
 const TRADITION_TO_EXPERT_ID: Record<string, string> = Object.fromEntries(
   Object.entries(EXPERT_ID_TO_TRADITION).map(([expertId, tid]) => [tid, expertId])
 );
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 export async function POST(
   req: Request,
@@ -46,8 +43,8 @@ export async function POST(
   const question = "question" in parsed ? parsed.question : undefined;
   const start = Date.now();
 
-  if (process.env.MOCK_MODE === "true") {
-    await sleep(300 + Math.random() * 300);
+  if (IS_MOCK_MODE) {
+    await mockDelay(300, 600);
     const mock = mockExpertResponses.find((r) => EXPERT_ID_TO_TRADITION[r.expertId] === tid);
     if (mock) {
       const result: ExpertOnly = {

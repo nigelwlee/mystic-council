@@ -4,7 +4,6 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { experts } from "@/lib/experts/registry";
 import { judgeConfig } from "@/lib/experts/judge";
 import { runSingleExpert } from "@/lib/api/run-expert";
-import { mockExpertResponses, mockJudgeVerdict } from "@/lib/mock-data";
 import { EXPERT_ID_TO_TRADITION } from "@/lib/constants/traditions";
 import { ContextInputSchema } from "@/lib/api/schemas";
 import { chartContextForTradition } from "@/lib/api/chart-context";
@@ -13,12 +12,9 @@ import { FORMAT_RULES } from "@/lib/format";
 import type { DailyReadingResponse, ExpertReading } from "@/lib/api/schemas";
 import { createClient } from "@/lib/supabase/server";
 import { makeSeededTarotTools } from "@/lib/tools/tarot";
+import { IS_MOCK_MODE, mockDelay, mockDailyReading } from "@/lib/mock";
 
 export const maxDuration = 60;
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 const openrouter = createOpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
@@ -55,7 +51,7 @@ export async function POST(req: Request) {
   const { data: { user } } = await supabase.auth.getUser();
 
   // Cache check: if authenticated and not in mock mode, return cached daily reading
-  if (user && process.env.MOCK_MODE !== "true") {
+  if (user && !IS_MOCK_MODE) {
     const { data: cached } = await supabase
       .from("readings")
       .select("output")
@@ -69,32 +65,9 @@ export async function POST(req: Request) {
     }
   }
 
-  if (process.env.MOCK_MODE === "true") {
-    await sleep(300 + Math.random() * 500);
-    const expertReadings: ExpertReading[] = mockExpertResponses.map((r) => {
-      const tid = EXPERT_ID_TO_TRADITION[r.expertId];
-      return {
-        traditionId: (tid ?? "western") as ExpertReading["traditionId"],
-        expertId: r.expertId,
-        expertName: r.expertName,
-        expertEmoji: r.expertEmoji,
-        color: r.color,
-        textColor: r.textColor,
-        content: typeof r.content === "string"
-          ? { facts: "", analysis: "", summary: r.content, oneLiner: r.content }
-          : r.content,
-        durationMs: 400 + Math.floor(Math.random() * 300),
-      };
-    });
-    const reading: DailyReadingResponse = {
-      id: crypto.randomUUID(),
-      generatedAt: new Date().toISOString(),
-      input: { birthData, date },
-      experts: expertReadings,
-      oracle: { summary: mockJudgeVerdict.summary, oneLiner: mockJudgeVerdict.oneLiner, durationMs: 300 },
-      totalDurationMs: Date.now() - start,
-    };
-    return Response.json(reading);
+  if (IS_MOCK_MODE) {
+    await mockDelay(300, 800);
+    return Response.json(mockDailyReading(date));
   }
 
   const dailyMessage = `Give me my daily reading for ${date}. What do the stars, cards, and numbers say about today?`;

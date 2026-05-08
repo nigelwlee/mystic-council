@@ -9,12 +9,9 @@ import { EXPERT_ID_TO_TRADITION } from "@/lib/constants/traditions";
 import { QuestionInputSchema } from "@/lib/api/schemas";
 import { chartContextForTradition, dailyPriorFrame } from "@/lib/api/chart-context";
 import type { CouncilReading, Digest, ExpertReading } from "@/lib/api/schemas";
+import { IS_MOCK_MODE, mockDelay } from "@/lib/mock";
 
 export const maxDuration = 60;
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 const openrouter = createOpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
@@ -31,8 +28,8 @@ export async function POST(req: Request) {
 
   const start = Date.now();
 
-  if (process.env.MOCK_MODE === "true") {
-    await sleep(800 + Math.random() * 400);
+  if (IS_MOCK_MODE) {
+    await mockDelay(800, 1200);
     const expertReadings: ExpertReading[] = mockExpertResponses.map((r) => {
       const traditionId = EXPERT_ID_TO_TRADITION[r.expertId];
       return {
