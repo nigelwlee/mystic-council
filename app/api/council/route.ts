@@ -10,6 +10,8 @@ import { QuestionInputSchema } from "@/lib/api/schemas";
 import { chartContextForTradition, dailyPriorFrame } from "@/lib/api/chart-context";
 import type { CouncilReading, Digest, ExpertReading } from "@/lib/api/schemas";
 import { IS_MOCK_MODE, mockDelay } from "@/lib/mock";
+import { bumpStreak } from "@/lib/api/streak";
+import { createClient } from "@/lib/supabase/server";
 
 export const maxDuration = 60;
 
@@ -27,6 +29,10 @@ export async function POST(req: Request) {
   const { birthData, date, question, dailyDigest, chart, dailyReading } = parsed.data;
 
   const start = Date.now();
+
+  // Resolve authenticated user for streak bump (non-blocking)
+  const supabaseClient = await createClient();
+  const { data: { user } } = await supabaseClient.auth.getUser();
 
   if (IS_MOCK_MODE) {
     await mockDelay(800, 1200);
@@ -151,6 +157,8 @@ export async function POST(req: Request) {
     digest,
     totalDurationMs: Date.now() - start,
   };
+
+  if (user) await bumpStreak(user.id, date);
 
   return Response.json(reading);
 }
