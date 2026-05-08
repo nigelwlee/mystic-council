@@ -13,6 +13,7 @@ import type { DailyReadingResponse, ExpertReading } from "@/lib/api/schemas";
 import { createClient } from "@/lib/supabase/server";
 import { makeSeededTarotTools } from "@/lib/tools/tarot";
 import { IS_MOCK_MODE, mockDelay, mockDailyReading } from "@/lib/mock";
+import { bumpStreak } from "@/lib/api/streak";
 
 export const maxDuration = 60;
 
@@ -180,6 +181,7 @@ export async function POST(req: Request) {
     if (dbError) {
       console.error("[daily] Supabase upsert error:", dbError.message);
     }
+    await bumpStreak(user.id, date);
   }
 
   return Response.json(reading);
