@@ -114,6 +114,68 @@ function computeAngles(year: number, month: number, day: number, hour: number, m
   };
 }
 
+type BirthChartResult = Awaited<ReturnType<typeof _computeBirthChart>>;
+const birthChartCache = new Map<string, BirthChartResult>();
+
+function _evictIfFull(cache: Map<string, unknown>) {
+  if (cache.size >= 100) {
+    cache.delete(cache.keys().next().value as string);
+  }
+}
+
+async function _computeBirthChart(date: string, time: string | undefined, latitude: number | undefined, longitude: number | undefined) {
+  const [year, month, day] = date.split("-").map(Number);
+  const [hour, minute] = time ? time.split(":").map(Number) : [12, 0];
+  const dateObj = new Date(Date.UTC(year!, month! - 1, day!, hour, minute));
+
+  const chart: Record<string, { sign: string; degree: number; longitude: number }> = {};
+  for (const body of BODIES) {
+    try {
+      const lon = EclipticLongitude(body, dateObj);
+      const { sign, degree } = longitudeToSign(lon);
+      chart[String(body)] = { sign, degree, longitude: Math.round(lon * 100) / 100 };
+    } catch {
+      // skip unsupported body
+    }
+  }
+
+  const longitudes = Object.fromEntries(
+    Object.entries(chart).map(([k, v]) => [k, v.longitude])
+  );
+  const aspects = getAspects(longitudes);
+
+  const angles = (latitude !== undefined && longitude !== undefined && time)
+    ? computeAngles(year!, month!, day!, hour!, minute!, latitude, longitude)
+    : null;
+
+  const ascLon = angles?.ascendant.longitude;
+  const houses = ascLon !== undefined
+    ? computeWholeSigns(ascLon)
+    : null;
+
+  const planetsWithHouses = ascLon !== undefined
+    ? Object.fromEntries(
+        Object.entries(chart).map(([name, p]) => [
+          name,
+          { ...p, house: wholeSignHouse(p.longitude, ascLon) },
+        ])
+      )
+    : chart;
+
+  return {
+    planets: planetsWithHouses,
+    aspects: aspects.slice(0, 15),
+    angles,
+    houses,
+    sunSign: chart["Sun"]?.sign,
+    moonSign: chart["Moon"]?.sign,
+    ascendant: angles?.ascendant.sign ?? null,
+    note: time
+      ? (angles ? "Chart calculated with birth time and location — angles and whole-sign houses accurate." : "Chart calculated with birth time.")
+      : "Birth time unknown — angles, rising sign, and house placements not calculated.",
+  };
+}
+
 const birthChartSchema = z.object({
   date: z.string().describe("Birth date in YYYY-MM-DD format"),
   time: z.string().optional().describe("Birth time in HH:mm format (24h). Leave empty if unknown."),
@@ -131,58 +193,14 @@ export const westernAstrologyTools = {
       "Calculate planetary positions (sign + degree) for a given birth date and time. Use this whenever birth data is available.",
     parameters: birthChartSchema,
     execute: async ({ date, time, latitude, longitude }: z.infer<typeof birthChartSchema>) => {
-      const [year, month, day] = date.split("-").map(Number);
-      const [hour, minute] = time ? time.split(":").map(Number) : [12, 0];
-      const dateObj = new Date(Date.UTC(year!, month! - 1, day!, hour, minute));
+      const cacheKey = `${date}|${time ?? ""}|${latitude ?? ""}|${longitude ?? ""}`;
+      const cached = birthChartCache.get(cacheKey);
+      if (cached) return cached;
 
-      const chart: Record<string, { sign: string; degree: number; longitude: number }> = {};
-      for (const body of BODIES) {
-        try {
-          const lon = EclipticLongitude(body, dateObj);
-          const { sign, degree } = longitudeToSign(lon);
-          chart[String(body)] = { sign, degree, longitude: Math.round(lon * 100) / 100 };
-        } catch {
-          // skip unsupported body
-        }
-      }
-
-      const longitudes = Object.fromEntries(
-        Object.entries(chart).map(([k, v]) => [k, v.longitude])
-      );
-      const aspects = getAspects(longitudes);
-
-      const angles = (latitude !== undefined && longitude !== undefined && time)
-        ? computeAngles(year!, month!, day!, hour!, minute!, latitude, longitude)
-        : null;
-
-      // Whole-sign houses: only valid when we have the ASC longitude
-      const ascLon = angles?.ascendant.longitude;
-      const houses = ascLon !== undefined
-        ? computeWholeSigns(ascLon)
-        : null;
-
-      // Place each planet in a house
-      const planetsWithHouses = ascLon !== undefined
-        ? Object.fromEntries(
-            Object.entries(chart).map(([name, p]) => [
-              name,
-              { ...p, house: wholeSignHouse(p.longitude, ascLon) },
-            ])
-          )
-        : chart;
-
-      return {
-        planets: planetsWithHouses,
-        aspects: aspects.slice(0, 15),
-        angles,
-        houses,
-        sunSign: chart["Sun"]?.sign,
-        moonSign: chart["Moon"]?.sign,
-        ascendant: angles?.ascendant.sign ?? null,
-        note: time
-          ? (angles ? "Chart calculated with birth time and location — angles and whole-sign houses accurate." : "Chart calculated with birth time.")
-          : "Birth time unknown — angles, rising sign, and house placements not calculated.",
-      };
+      const result = await _computeBirthChart(date, time, latitude, longitude);
+      _evictIfFull(birthChartCache);
+      birthChartCache.set(cacheKey, result);
+      return result;
     },
   }),
 
