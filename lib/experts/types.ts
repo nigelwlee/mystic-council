@@ -11,8 +11,8 @@ export interface BirthData {
   name?: string;
   date?: string; // ISO date string YYYY-MM-DD
   time?: string; // HH:mm format
-  latitude?: number;
-  longitude?: number;
+  latitude?: number | null;
+  longitude?: number | null;
   location?: string; // city name for display
 }
 

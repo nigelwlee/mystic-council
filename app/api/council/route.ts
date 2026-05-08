@@ -30,31 +30,16 @@ export async function POST(req: Request) {
 
   if (IS_MOCK_MODE) {
     await mockDelay(800, 1200);
-    const expertReadings: ExpertReading[] = mockExpertResponses.map((r) => {
-      const traditionId = EXPERT_ID_TO_TRADITION[r.expertId];
-      return {
-        traditionId: (traditionId ?? "western") as ExpertReading["traditionId"],
-        expertId: r.expertId,
-        expertName: r.expertName,
-        expertEmoji: r.expertEmoji,
-        color: r.color,
-        textColor: r.textColor,
-        content: typeof r.content === "string"
-          ? { facts: "", analysis: "", summary: r.content, oneLiner: r.content }
-          : r.content,
-        durationMs: 600 + Math.floor(Math.random() * 400),
-      };
-    });
+    const expertReadings: ExpertReading[] = mockExpertResponses.map((r) => ({
+      ...r,
+      durationMs: 600 + Math.floor(Math.random() * 400),
+    }));
     const reading: CouncilReading = {
       id: crypto.randomUUID(),
       generatedAt: new Date().toISOString(),
       input: { birthData, date, question },
       experts: expertReadings,
-      oracle: {
-        summary: mockJudgeVerdict.summary,
-        oneLiner: mockJudgeVerdict.oneLiner,
-        durationMs: 500,
-      },
+      oracle: { ...mockJudgeVerdict, durationMs: 500 },
       digest: dailyDigest
         ? {
             oneLiner: "A day of reflection and quiet momentum.",

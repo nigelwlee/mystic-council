@@ -43,7 +43,7 @@ export async function POST(req: Request) {
   const [western, chinese, vedic, lifePathResult, nameResult, personalNumbersResult, pinnaclesResult, westernTransits, tarot] = await Promise.all([
     bd.date
       ? westernAstrologyTools.calculateBirthChart.execute!(
-          { date: bd.date, time: bd.time, latitude: bd.latitude, longitude: bd.longitude },
+          { date: bd.date, time: bd.time, latitude: bd.latitude ?? undefined, longitude: bd.longitude ?? undefined },
           {} as never
         )
       : Promise.resolve(null),
@@ -57,7 +57,7 @@ export async function POST(req: Request) {
 
     bd.date
       ? vedicAstrologyTools.calculateVedicChart.execute!(
-          { date: bd.date, time: bd.time, latitude: bd.latitude, longitude: bd.longitude },
+          { date: bd.date, time: bd.time, latitude: bd.latitude ?? undefined, longitude: bd.longitude ?? undefined },
           {} as never
         )
       : Promise.resolve(null),
