@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { usePostHog } from "posthog-js/react";
 import { useProtoStore } from "@/lib/hooks/use-proto-store";
 import { ReadTab } from "@/components/daily/ReadTab";
+import { ChatTab } from "@/components/daily/ChatTab";
 import { MeTab } from "@/components/daily/MeTab";
 
 const BG = "#0A0B14";
@@ -157,10 +158,6 @@ export default function DailyPage() {
             <button
               key={tab.id}
               onClick={() => {
-                if (tab.id === "chat") {
-                  router.push("/chat");
-                  return;
-                }
                 setActiveTab(tab.id);
                 posthog?.capture("daily_tab_switched", { tab: tab.id });
               }}
@@ -193,6 +190,11 @@ export default function DailyPage() {
         {activeTab === "read" && (
           <ReadTab key={tabKey} onLoad={handleLoad} />
         )}
+        {activeTab === "chat" && (
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+            <ChatTab />
+          </div>
+        )}
         {activeTab === "me" && <MeTab />}
       </div>
 
@@ -208,7 +210,7 @@ export default function DailyPage() {
           }}
         >
           <button
-            onClick={() => router.push("/chat")}
+            onClick={() => setActiveTab("chat")}
             style={{
               width: "100%",
               padding: "16px 20px",
