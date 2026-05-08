@@ -32,6 +32,10 @@ export async function POST(req: Request) {
   const { birthData, date, chart } = parsed.data;
   const start = Date.now();
 
+  // Resolve authenticated user (if any) via Supabase session cookie
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
   // Geocode birth location if lat/lng missing (mobile sends null from DB when not yet geocoded)
   if (birthData && !birthData.latitude && !birthData.longitude && birthData.location) {
     try {
@@ -43,13 +47,16 @@ export async function POST(req: Request) {
       if (geoData[0]) {
         birthData.latitude = parseFloat(parseFloat(geoData[0].lat).toFixed(4));
         birthData.longitude = parseFloat(parseFloat(geoData[0].lon).toFixed(4));
+        // Persist back so the Me tab can display them
+        if (user) {
+          void supabase
+            .from("birth_data")
+            .update({ latitude: birthData.latitude, longitude: birthData.longitude })
+            .eq("user_id", user.id);
+        }
       }
     } catch { /* non-fatal: experts degrade gracefully without coordinates */ }
   }
-
-  // Resolve authenticated user (if any) via Supabase session cookie
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
 
   // Cache check: if authenticated and not in mock mode, return cached daily reading
   if (user && !IS_MOCK_MODE) {
