@@ -3,7 +3,7 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { createHash } from "crypto";
 import { z } from "zod";
 import { experts } from "@/lib/experts/registry";
-import { judgeDailyConfig as judgeConfig } from "@/lib/experts/judge";
+import { judgeConfig, loadJudgeDailyPrompt } from "@/lib/experts/judge";
 import { runSingleExpert } from "@/lib/api/run-expert";
 import { EXPERT_ID_TO_TRADITION } from "@/lib/constants/traditions";
 import { ContextInputSchema, DailyReadingResponseSchema } from "@/lib/api/schemas";
@@ -120,7 +120,8 @@ export async function POST(req: Request) {
             return parts.join("\n");
           })
           .join("\n\n---\n\n");
-        const judgeSystemPrompt = judgeConfig.systemPromptTemplate.replace("{expertOutputs}", expertOutputs) + "\n\n" + VOICE_RULES + "\n\n" + FORMAT_RULES;
+        const judgePrompt = await loadJudgeDailyPrompt();
+        const judgeSystemPrompt = judgePrompt.replace("{expertOutputs}", expertOutputs) + "\n\n" + VOICE_RULES + "\n\n" + FORMAT_RULES;
         emit({ type: "oracle-start" });
         const judgeStart = Date.now();
         try {

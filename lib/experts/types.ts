@@ -23,8 +23,7 @@ export interface ExpertConfig {
   emoji: string;
   color: string; // CSS color for left border accent
   textColor: string; // Tailwind text color class
-  systemPromptTemplate: string; // {knowledge} and {birthData} placeholders
-  knowledgePath: string; // subfolder under /knowledge/
+  knowledgePath: string; // subfolder under /knowledge/ — system-prompt.md lives here
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tools: Record<string, CoreTool<any, any>>;
   model: string;

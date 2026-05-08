@@ -2,7 +2,7 @@ import { generateObject } from "ai";
 import { z } from "zod";
 import { createOpenAI } from "@ai-sdk/openai";
 import { experts } from "@/lib/experts/registry";
-import { judgeConfig } from "@/lib/experts/judge";
+import { judgeConfig, loadJudgePrompt } from "@/lib/experts/judge";
 import { runSingleExpert } from "@/lib/api/run-expert";
 import { EXPERT_ID_TO_TRADITION } from "@/lib/constants/traditions";
 import { ContextInputSchema } from "@/lib/api/schemas";
@@ -110,7 +110,8 @@ export async function POST(req: Request) {
     .map((r) => `### ${r.expertName}\n${r.content.summary}`)
     .join("\n\n---\n\n");
 
-  const judgeSystemPrompt = judgeConfig.systemPromptTemplate.replace("{expertOutputs}", expertOutputs) + "\n\n" + VOICE_RULES + "\n\n" + FORMAT_RULES;
+  const judgePrompt = await loadJudgePrompt();
+  const judgeSystemPrompt = judgePrompt.replace("{expertOutputs}", expertOutputs) + "\n\n" + VOICE_RULES + "\n\n" + FORMAT_RULES;
   const judgeStart = Date.now();
 
   const judgeUserMessage = `Synthesize a daily reading for ${date} in 2-3 sentences.`;

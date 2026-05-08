@@ -2,7 +2,7 @@ import { generateObject } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { z } from "zod";
 import { experts } from "@/lib/experts/registry";
-import { judgeChatConfig as judgeConfig } from "@/lib/experts/judge";
+import { judgeConfig, loadJudgeChatPrompt } from "@/lib/experts/judge";
 import { runSingleExpert } from "@/lib/api/run-expert";
 import { EXPERT_ID_TO_TRADITION } from "@/lib/constants/traditions";
 import { QuestionInputSchema, CouncilReadingSchema } from "@/lib/api/schemas";
@@ -107,8 +107,9 @@ export async function POST(req: Request) {
           })
           .join("\n\n---\n\n");
         const priorFrame = dailyPriorFrame(dailyReading);
+        const judgePrompt = await loadJudgeChatPrompt();
         const judgeSystemPrompt =
-          judgeConfig.systemPromptTemplate.replace("{expertOutputs}", expertOutputs) +
+          judgePrompt.replace("{expertOutputs}", expertOutputs) +
           (priorFrame ?? "") +
           "\n\n" + VOICE_RULES +
           "\n\n" + FORMAT_RULES;
