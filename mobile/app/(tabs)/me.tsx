@@ -2,10 +2,19 @@ import { useEffect, useState } from 'react';
 import {
   View, Text, TextInput, ScrollView, Pressable,
   StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform,
+  LayoutAnimation, UIManager,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
+import {
+  fetchChart, westernHeadline, vedicHeadline, chineseHeadline, numerologyHeadline,
+} from '../../lib/chart-api';
 import type { Database } from '../../lib/database.types';
+import type { MobileChartData } from '../../lib/chart-api';
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 type BirthDataRow = Database['public']['Tables']['birth_data']['Row'];
 
@@ -27,16 +36,22 @@ export default function MeTab() {
   const [hint, setHint] = useState('');
   const [loading, setLoading] = useState(true);
 
+  const [chart, setChart] = useState<MobileChartData | null>(null);
+  const [chartLoading, setChartLoading] = useState(false);
+  const [chartError, setChartError] = useState(false);
+
   useEffect(() => {
     async function load() {
       const [
         { data: birthData },
         { data: streakData },
         { data: { user } },
+        { data: { session } },
       ] = await Promise.all([
         supabase.from('birth_data').select('*').maybeSingle(),
         supabase.from('daily_streaks').select('current_streak, longest_streak').maybeSingle(),
         supabase.auth.getUser(),
+        supabase.auth.getSession(),
       ]);
 
       if (birthData) {
@@ -53,6 +68,26 @@ export default function MeTab() {
       setOriginalEmail(email);
       setDraftEmail(email);
       setLoading(false);
+
+      // Fetch chart if we have birth data + session
+      if (birthData?.birthdate && session?.access_token) {
+        setChartLoading(true);
+        fetchChart({
+          birthData: {
+            name: birthData.name,
+            date: birthData.birthdate,
+            time: birthData.birthtime,
+            location: birthData.birthplace,
+            latitude: birthData.latitude,
+            longitude: birthData.longitude,
+          },
+          date: new Date().toISOString().slice(0, 10),
+          accessToken: session.access_token,
+        })
+          .then((c) => setChart(c))
+          .catch(() => setChartError(true))
+          .finally(() => setChartLoading(false));
+      }
     }
     void load();
   }, []);
@@ -221,6 +256,49 @@ export default function MeTab() {
           </Pressable>
         )}
 
+        {/* Charts */}
+        {profile?.birthdate && (
+          <>
+            <SectionHeader label="Your Charts" />
+            {chartLoading && (
+              <View style={styles.chartLoading}>
+                <ActivityIndicator color="rgba(191,168,130,0.6)" size="small" />
+              </View>
+            )}
+            {chartError && !chartLoading && (
+              <Text style={styles.chartError}>Charts unavailable. Pull to refresh.</Text>
+            )}
+            {chart && !chartLoading && (
+              <View style={styles.section}>
+                <ChartRow
+                  emoji="⭐"
+                  label="Western Astrology"
+                  headline={chart.traditions.western ? westernHeadline(chart.traditions.western) : null}
+                  data={chart.traditions.western ?? null}
+                />
+                <ChartRow
+                  emoji="🔱"
+                  label="Vedic Jyotish"
+                  headline={chart.traditions.vedic ? vedicHeadline(chart.traditions.vedic) : null}
+                  data={chart.traditions.vedic ?? null}
+                />
+                <ChartRow
+                  emoji="🐉"
+                  label="Chinese Astrology"
+                  headline={chart.traditions.chinese ? chineseHeadline(chart.traditions.chinese) : null}
+                  data={chart.traditions.chinese ?? null}
+                />
+                <ChartRow
+                  emoji="🔢"
+                  label="Numerology"
+                  headline={chart.traditions.numerology ? numerologyHeadline(chart.traditions.numerology) : null}
+                  data={chart.traditions.numerology ?? null}
+                />
+              </View>
+            )}
+          </>
+        )}
+
         {/* Sign out */}
         <Pressable style={styles.signOut} onPress={signOut}>
           <Text style={styles.signOutText}>Sign Out</Text>
@@ -261,6 +339,72 @@ function EditRow({ label, value, onChangeText, keyboardType = 'default', autoCap
         placeholderTextColor="#4B5563"
       />
     </View>
+  );
+}
+
+function KVList({ data, depth = 0 }: { data: Record<string, unknown>; depth?: number }) {
+  if (depth > 2) return null;
+  return (
+    <>
+      {Object.entries(data).map(([k, v]) => {
+        if (v == null) return null;
+        if (typeof v === 'object' && !Array.isArray(v)) {
+          return (
+            <View key={k}>
+              <Text style={[styles.kvKey, { color: 'rgba(191,168,130,0.5)', marginTop: 4 }]}>
+                {k.replace(/([A-Z])/g, ' $1').trim().toUpperCase()}
+              </Text>
+              <KVList data={v as Record<string, unknown>} depth={depth + 1} />
+            </View>
+          );
+        }
+        if (Array.isArray(v)) return null;
+        return (
+          <View key={k} style={styles.kvRow}>
+            <Text style={styles.kvKey}>{k.replace(/([A-Z])/g, ' $1').trim()}</Text>
+            <Text style={styles.kvVal}>{String(v)}</Text>
+          </View>
+        );
+      })}
+    </>
+  );
+}
+
+function ChartRow({
+  emoji, label, headline, data,
+}: {
+  emoji: string;
+  label: string;
+  headline: string | null;
+  data: Record<string, unknown> | null;
+}) {
+  const [open, setOpen] = useState(false);
+
+  function toggle() {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setOpen((o) => !o);
+  }
+
+  return (
+    <Pressable onPress={data ? toggle : undefined} style={styles.chartRow}>
+      <View style={styles.chartRowHeader}>
+        <View style={styles.chartRowLeft}>
+          <Text style={styles.chartEmoji}>{emoji}</Text>
+          <View>
+            <Text style={styles.chartLabel}>{label.toUpperCase()}</Text>
+            <Text style={[styles.chartHeadline, !headline && styles.chartHeadlineMuted]}>
+              {headline ?? 'No data'}
+            </Text>
+          </View>
+        </View>
+        {data && <Text style={styles.chartToggle}>{open ? '▲' : '▼'}</Text>}
+      </View>
+      {open && data && (
+        <View style={styles.chartDetail}>
+          <KVList data={data} />
+        </View>
+      )}
+    </Pressable>
   );
 }
 
@@ -345,4 +489,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   signOutText: { color: '#6B7280', fontSize: 13 },
+
+  // Charts
+  chartLoading: { paddingVertical: 20, alignItems: 'center' },
+  chartError: { marginHorizontal: 20, color: '#4B5563', fontSize: 12, paddingVertical: 12 },
+  chartRow: {
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E2030',
+  },
+  chartRowHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+  },
+  chartRowLeft: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
+  chartEmoji: { fontSize: 13 },
+  chartLabel: { color: '#6B7280', fontSize: 11, letterSpacing: 0.5 },
+  chartHeadline: { color: '#F5F0E8', fontSize: 13, marginTop: 2, lineHeight: 18 },
+  chartHeadlineMuted: { color: '#4B5563', fontStyle: 'italic' },
+  chartToggle: { color: '#6B7280', fontSize: 10, paddingTop: 2 },
+  chartDetail: { marginTop: 10, gap: 4 },
+  kvRow: { flexDirection: 'row', gap: 8 },
+  kvKey: { color: '#6B7280', fontSize: 11, width: 120 },
+  kvVal: { color: '#9CA3AF', fontSize: 11, flex: 1 },
 });
