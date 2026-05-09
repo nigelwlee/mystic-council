@@ -131,11 +131,14 @@ async function _computeBirthChart(date: string, time: string | undefined, latitu
   const chart: Record<string, { sign: string; degree: number; longitude: number }> = {};
   for (const body of BODIES) {
     try {
-      const lon = EclipticLongitude(body, dateObj);
+      // EclipticLongitude throws for Body.Sun (heliocentric-only); use Earth + 180° for geocentric Sun
+      const lon = body === Body.Sun
+        ? (EclipticLongitude(Body.Earth, dateObj) + 180) % 360
+        : EclipticLongitude(body, dateObj);
       const { sign, degree } = longitudeToSign(lon);
       chart[String(body)] = { sign, degree, longitude: Math.round(lon * 100) / 100 };
-    } catch {
-      // skip unsupported body
+    } catch (e) {
+      console.warn("[astrology] body skipped:", String(body), e);
     }
   }
 
@@ -214,11 +217,13 @@ export const westernAstrologyTools = {
       const transits: Record<string, { sign: string; degree: number; longitude: number }> = {};
       for (const body of transitBodies) {
         try {
-          const lon = EclipticLongitude(body, dateObj);
+          const lon = body === Body.Sun
+            ? (EclipticLongitude(Body.Earth, dateObj) + 180) % 360
+            : EclipticLongitude(body, dateObj);
           const { sign, degree } = longitudeToSign(lon);
           transits[String(body)] = { sign, degree, longitude: Math.round(lon * 100) / 100 };
-        } catch {
-          // skip
+        } catch (e) {
+          console.warn("[astrology] transit body skipped:", String(body), e);
         }
       }
       return { date, transits };
