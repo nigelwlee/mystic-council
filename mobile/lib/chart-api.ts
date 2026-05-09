@@ -87,6 +87,55 @@ export function numerologyHeadline(d: Record<string, unknown>): string | null {
   return parts.join(' · ');
 }
 
+// Profile readings — per-expert at-a-glance birth interpretations
+
+export interface ProfileTradition {
+  atGlance: string;
+}
+
+export interface ProfileReading {
+  traditions: {
+    western?: ProfileTradition;
+    vedic?: ProfileTradition;
+    chinese?: ProfileTradition;
+    numerology?: ProfileTradition;
+    tarot?: ProfileTradition;
+  };
+  birthDataHash: string;
+  generatedAt: string;
+}
+
+interface ProfileParams {
+  birthData: {
+    name?: string | null;
+    date?: string | null;
+    time?: string | null;
+    location?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
+  };
+  accessToken: string;
+}
+
+export async function fetchProfile(params: ProfileParams): Promise<ProfileReading> {
+  const { birthData, accessToken } = params;
+  const res = await fetch(`${API_BASE}/api/profile`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({ birthData }),
+  });
+  if (!res.ok) throw new Error(`Profile API error ${res.status}`);
+  return res.json() as Promise<ProfileReading>;
+}
+
+// Fire-and-forget — triggers generation without blocking the caller
+export function triggerProfileGeneration(params: ProfileParams): void {
+  fetchProfile(params).catch(() => {/* non-fatal */});
+}
+
 // Tarot birth cards — Soul + Personality from birthdate (Angeles Arrien method)
 
 const MAJOR_ARCANA = [
