@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { supabase } from '../lib/supabase';
+import { triggerProfileGeneration } from '../lib/chart-api';
 
 export default function OnboardingScreen() {
   const [name, setName] = useState('');
@@ -71,6 +72,9 @@ export default function OnboardingScreen() {
         { onConflict: 'user_id' }
       );
       if (insertError) throw insertError;
+      // Fire-and-forget profile generation so it's ready when the user opens Me tab
+      const bd = { date: buildDateStr(), time: buildTimeStr(), location: birthplace.trim() };
+      triggerProfileGeneration({ birthData: bd, accessToken: session!.access_token });
       router.replace('/(tabs)');
     } catch (e: any) {
       setError(e.message ?? 'Failed to save. Please try again.');

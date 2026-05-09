@@ -7,11 +7,12 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import {
-  fetchChart, westernHeadline, vedicHeadline, chineseHeadline, numerologyHeadline,
+  fetchChart, fetchProfile, triggerProfileGeneration,
+  westernHeadline, vedicHeadline, chineseHeadline, numerologyHeadline,
   computeTarotBirthCards, tarotHeadline,
 } from '../../lib/chart-api';
 import type { Database } from '../../lib/database.types';
-import type { MobileChartData } from '../../lib/chart-api';
+import type { MobileChartData, ProfileReading } from '../../lib/chart-api';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -40,6 +41,8 @@ export default function MeTab() {
   const [chart, setChart] = useState<MobileChartData | null>(null);
   const [chartLoading, setChartLoading] = useState(false);
   const [chartError, setChartError] = useState(false);
+
+  const [profileReading, setProfileReading] = useState<ProfileReading | null>(null);
 
   useEffect(() => {
     async function load() {
@@ -70,24 +73,24 @@ export default function MeTab() {
       setDraftEmail(email);
       setLoading(false);
 
-      // Fetch chart if we have birth data + session
+      // Fetch chart + profile if we have birth data + session
       if (birthData?.birthdate && session?.access_token) {
+        const bd = {
+          name: birthData.name,
+          date: birthData.birthdate,
+          time: birthData.birthtime,
+          location: birthData.birthplace,
+          latitude: birthData.latitude,
+          longitude: birthData.longitude,
+        };
         setChartLoading(true);
-        fetchChart({
-          birthData: {
-            name: birthData.name,
-            date: birthData.birthdate,
-            time: birthData.birthtime,
-            location: birthData.birthplace,
-            latitude: birthData.latitude,
-            longitude: birthData.longitude,
-          },
-          date: new Date().toISOString().slice(0, 10),
-          accessToken: session.access_token,
-        })
+        fetchChart({ birthData: bd, date: new Date().toISOString().slice(0, 10), accessToken: session.access_token })
           .then((c) => setChart(c))
           .catch(() => setChartError(true))
           .finally(() => setChartLoading(false));
+        fetchProfile({ birthData: bd, accessToken: session.access_token })
+          .then((p) => setProfileReading(p))
+          .catch(() => {/* non-fatal */});
       }
     }
     void load();
@@ -132,6 +135,8 @@ export default function MeTab() {
           { onConflict: 'user_id' }
         );
         if (error) throw new Error(`Birth data: ${error.message}`);
+        // Invalidate profile reading so it regenerates on next fetch
+        setProfileReading(null);
         // Update local profile copy
         setProfile((prev) => prev ? {
           ...prev,
@@ -142,7 +147,18 @@ export default function MeTab() {
           latitude: draftPlace.trim() !== (profile?.birthplace ?? '') ? null : prev.latitude,
           longitude: draftPlace.trim() !== (profile?.birthplace ?? '') ? null : prev.longitude,
         } : prev);
-        if (!hints.length) hints.push('Saved.');
+        if (!hints.length) hints.push('Saved. Regenerating your chart readings…');
+        // Fire-and-forget profile generation with updated birth data
+        const { data: { session: sess } } = await supabase.auth.getSession();
+        if (sess?.access_token) {
+          triggerProfileGeneration({
+            birthData: {
+              date: draftDate.trim(), time: draftTime.trim() || null,
+              location: draftPlace.trim(), name: draftName.trim(),
+            },
+            accessToken: sess.access_token,
+          });
+        }
       }
 
       setHint(hints.join(' '));
@@ -278,24 +294,28 @@ export default function MeTab() {
                   label="Western Astrology"
                   headline={chart.traditions.western ? westernHeadline(chart.traditions.western) : null}
                   data={chart.traditions.western ?? null}
+                  atGlance={profileReading?.traditions.western?.atGlance}
                 />
                 <ChartRow
                   emoji="🔱"
                   label="Vedic Jyotish"
                   headline={chart.traditions.vedic ? vedicHeadline(chart.traditions.vedic) : null}
                   data={chart.traditions.vedic ?? null}
+                  atGlance={profileReading?.traditions.vedic?.atGlance}
                 />
                 <ChartRow
                   emoji="🐉"
                   label="Chinese Astrology"
                   headline={chart.traditions.chinese ? chineseHeadline(chart.traditions.chinese) : null}
                   data={chart.traditions.chinese ?? null}
+                  atGlance={profileReading?.traditions.chinese?.atGlance}
                 />
                 <ChartRow
                   emoji="🔢"
                   label="Numerology"
                   headline={chart.traditions.numerology ? numerologyHeadline(chart.traditions.numerology) : null}
                   data={chart.traditions.numerology ?? null}
+                  atGlance={profileReading?.traditions.numerology?.atGlance}
                 />
                 {tarotCards && (
                   <ChartRow
@@ -306,6 +326,7 @@ export default function MeTab() {
                       'Soul Card': `${tarotCards.soul.name} (${tarotCards.soul.number})`,
                       'Personality Card': `${tarotCards.personality.name} (${tarotCards.personality.number})`,
                     }}
+                    atGlance={profileReading?.traditions.tarot?.atGlance}
                   />
                 )}
               </View>
@@ -385,12 +406,13 @@ function KVList({ data, depth = 0 }: { data: Record<string, unknown>; depth?: nu
 }
 
 function ChartRow({
-  emoji, label, headline, data,
+  emoji, label, headline, data, atGlance,
 }: {
   emoji: string;
   label: string;
   headline: string | null;
   data: Record<string, unknown> | null;
+  atGlance?: string | null;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -415,6 +437,10 @@ function ChartRow({
       </View>
       {open && data && (
         <View style={styles.chartDetail}>
+          {atGlance
+            ? <Text style={styles.atGlance}>{atGlance}</Text>
+            : <Text style={styles.atGlancePending}>Your reading is being prepared…</Text>
+          }
           <KVList data={data} />
         </View>
       )}
@@ -524,6 +550,19 @@ const styles = StyleSheet.create({
   chartHeadlineMuted: { color: '#4B5563', fontStyle: 'italic' },
   chartToggle: { color: '#6B7280', fontSize: 10, paddingTop: 2 },
   chartDetail: { marginTop: 10, gap: 4 },
+  atGlance: {
+    color: '#F5F0E8',
+    fontSize: 13,
+    lineHeight: 21,
+    marginBottom: 12,
+    fontStyle: 'italic',
+  },
+  atGlancePending: {
+    color: '#4B5563',
+    fontSize: 12,
+    marginBottom: 10,
+    fontStyle: 'italic',
+  },
   kvRow: { flexDirection: 'row', gap: 8 },
   kvKey: { color: '#6B7280', fontSize: 11, width: 120 },
   kvVal: { color: '#9CA3AF', fontSize: 11, flex: 1 },
