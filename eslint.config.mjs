@@ -14,6 +14,9 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Mobile app has its own ESLint config
     "mobile/**",
+    // Worktrees contain their own build artifacts
+    ".claude/worktrees/**",
+    "worktrees/**",
   ]),
 ]);
 
