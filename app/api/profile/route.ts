@@ -12,6 +12,8 @@ import { adminClient } from "@/lib/supabase/admin";
 
 export const maxDuration = 120;
 
+const EXPECTED_TRADITIONS = ["western", "vedic", "chinese", "numerology", "tarot"] as const;
+
 async function birthDataHash(bd: {
   date?: string | null;
   time?: string | null;
@@ -26,6 +28,13 @@ async function birthDataHash(bd: {
     .join("");
 }
 
+function isCacheComplete(output: { traditions?: Record<string, { atGlance?: string }> } | null): boolean {
+  if (!output?.traditions) return false;
+  return EXPECTED_TRADITIONS.every(
+    (t) => typeof output.traditions![t]?.atGlance === "string" && output.traditions![t]!.atGlance!.length > 0,
+  );
+}
+
 export async function POST(req: Request) {
   const body = await req.json() as unknown;
   const parsed = ContextInputSchema.safeParse(body);
@@ -34,6 +43,7 @@ export async function POST(req: Request) {
   }
 
   const { birthData } = parsed.data;
+  const force = new URL(req.url).searchParams.get("force") === "1";
 
   // Auth — cookie + Bearer fallback
   const supabase = await createClient();
@@ -49,19 +59,21 @@ export async function POST(req: Request) {
   const hash = await birthDataHash(birthData);
   const readingDate = birthData.date; // sentinel: use birthdate as the reading_date
 
-  // Cache check
-  const { data: cached } = await adminClient
-    .from("readings")
-    .select("output")
-    .eq("user_id", user.id)
-    .eq("kind", "profile")
-    .eq("reading_date", readingDate)
-    .maybeSingle();
+  // Cache check — only return if hash matches AND all 5 traditions have real content
+  if (!force) {
+    const { data: cached } = await adminClient
+      .from("readings")
+      .select("output")
+      .eq("user_id", user.id)
+      .eq("kind", "profile")
+      .eq("reading_date", readingDate)
+      .maybeSingle();
 
-  if (cached?.output) {
-    const out = cached.output as { birthDataHash?: string };
-    if (out.birthDataHash === hash) {
-      return Response.json(cached.output);
+    if (cached?.output) {
+      const out = cached.output as { birthDataHash?: string; traditions?: Record<string, { atGlance?: string }> };
+      if (out.birthDataHash === hash && isCacheComplete(out)) {
+        return Response.json(cached.output);
+      }
     }
   }
 
@@ -119,19 +131,28 @@ export async function POST(req: Request) {
     })
   );
 
-  const traditions: Record<string, { atGlance: string }> = {};
+  const traditions: Record<string, { atGlance: string; status: "ready" | "failed" }> = {};
   settled.forEach((r, i) => {
     const e = experts[i]!;
     const tid = EXPERT_ID_TO_TRADITION[e.id] ?? e.id;
-    if (r.status === "fulfilled" && !r.value.error) {
-      traditions[tid] = { atGlance: r.value.atGlance };
+    if (r.status === "fulfilled" && !r.value.error && r.value.atGlance) {
+      traditions[tid] = { atGlance: r.value.atGlance, status: "ready" };
     } else {
-      const msg = r.status === "rejected"
+      const errMsg = r.status === "rejected"
         ? (r.reason instanceof Error ? r.reason.message : String(r.reason))
         : r.value.error ?? "Failed";
-      traditions[tid] = { atGlance: msg };
+      console.warn(`[profile] expert ${e.id} failed: ${errMsg}`);
+      traditions[tid] = { atGlance: "", status: "failed" };
     }
   });
+
+  const successCount = Object.values(traditions).filter((t) => t.status === "ready").length;
+  console.log(JSON.stringify({
+    tag: "[profile]",
+    userId: user.id,
+    successCount,
+    failedTraditions: Object.entries(traditions).filter(([, v]) => v.status === "failed").map(([k]) => k),
+  }));
 
   const output = {
     traditions,
@@ -139,22 +160,25 @@ export async function POST(req: Request) {
     generatedAt: new Date().toISOString(),
   };
 
-  const { error: dbError } = await adminClient
-    .from("readings")
-    .upsert(
-      {
-        user_id: user.id,
-        kind: "profile",
-        reading_date: readingDate,
-        input: { birthData },
-        output,
-        total_duration_ms: null,
-      },
-      { onConflict: "user_id,kind,reading_date" }
-    );
+  // Only persist if at least one expert succeeded
+  if (successCount > 0) {
+    const { error: dbError } = await adminClient
+      .from("readings")
+      .upsert(
+        {
+          user_id: user.id,
+          kind: "profile",
+          reading_date: readingDate,
+          input: { birthData },
+          output,
+          total_duration_ms: null,
+        },
+        { onConflict: "user_id,kind,reading_date" }
+      );
 
-  if (dbError) {
-    console.error("[profile] upsert error:", dbError.message);
+    if (dbError) {
+      console.error("[profile] upsert error:", dbError.message);
+    }
   }
 
   return Response.json(output);

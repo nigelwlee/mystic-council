@@ -58,8 +58,10 @@ export async function POST(req: Request) {
     } catch { /* non-fatal: experts degrade gracefully without coordinates */ }
   }
 
+  const force = new URL(req.url).searchParams.get("force") === "1";
+
   // Cache check: if authenticated and not in mock mode, return cached daily reading
-  if (user && !IS_MOCK_MODE) {
+  if (user && !IS_MOCK_MODE && !force) {
     const { data: cached } = await supabase
       .from("readings")
       .select("output")
@@ -110,6 +112,12 @@ export async function POST(req: Request) {
   });
 
   const successful = expertReadings.filter((r) => !r.error);
+  console.log(JSON.stringify({
+    tag: "[daily]",
+    date,
+    successCount: successful.length,
+    failedExperts: expertReadings.filter((r) => r.error).map((r) => r.expertId),
+  }));
   if (successful.length === 0) {
     return Response.json({ error: "All experts failed" }, { status: 502 });
   }

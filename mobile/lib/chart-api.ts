@@ -91,6 +91,7 @@ export function numerologyHeadline(d: Record<string, unknown>): string | null {
 
 export interface ProfileTradition {
   atGlance: string;
+  status?: 'ready' | 'failed';
 }
 
 export interface ProfileReading {
@@ -115,11 +116,13 @@ interface ProfileParams {
     longitude?: number | null;
   };
   accessToken: string;
+  force?: boolean;
 }
 
 export async function fetchProfile(params: ProfileParams): Promise<ProfileReading> {
-  const { birthData, accessToken } = params;
-  const res = await fetch(`${API_BASE}/api/profile`, {
+  const { birthData, accessToken, force } = params;
+  const url = force ? `${API_BASE}/api/profile?force=1` : `${API_BASE}/api/profile`;
+  const res = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

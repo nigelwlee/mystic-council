@@ -5,7 +5,7 @@ import { loadKnowledge, loadSystemPrompt } from "@/lib/knowledge/loader";
 import { EXPERT_ID_TO_TRADITION } from "@/lib/constants/traditions";
 import { voiceRulesForTradition } from "@/lib/voice";
 import { FORMAT_RULES } from "@/lib/format";
-import { formatBirthData, patchToolsWithBirthData } from "@/lib/api/run-expert";
+import { formatBirthData, runWithRetry } from "@/lib/api/run-expert";
 import type { BirthData, ExpertConfig } from "@/lib/experts/types";
 
 const openrouter = createOpenAI({
@@ -60,26 +60,33 @@ export async function runProfileExpert(
     ? `${chartContext}Based on this person's birth chart and the facts above, write their "at a glance" profile reading.`
     : "Based on this person's birth data, write their \"at a glance\" profile reading.";
 
-  const TIMEOUT_MS = 60_000;
-  try {
-    const result = await Promise.race([
-      generateObject({
-        model: openrouter(expert.model),
-        system: systemPrompt,
-        messages: [{ role: "user", content: userMessage }],
-        schema: ProfileSchema,
-        // Allow tool use for chart computation before generating the profile
-      }),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`Expert ${expert.id} timed out`)), TIMEOUT_MS),
-      ),
-    ]);
+  // 50s per attempt × 2 attempts = 100s max, fits within /api/profile maxDuration=120
+  const TIMEOUT_MS = 50_000;
 
-    return {
-      traditionId,
-      expertId: expert.id,
-      atGlance: result.object.atGlance,
-    };
+  try {
+    const atGlance = await runWithRetry(async (attempt) => {
+      const attemptStart = Date.now();
+      try {
+        const result = await Promise.race([
+          generateObject({
+            model: openrouter(expert.model),
+            system: systemPrompt,
+            messages: [{ role: "user", content: userMessage }],
+            schema: ProfileSchema,
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error(`Expert ${expert.id} timed out`)), TIMEOUT_MS),
+          ),
+        ]);
+        console.log(JSON.stringify({ tag: "[profile-expert]", expertId: expert.id, traditionId, model: expert.model, attempt, ok: true, durationMs: Date.now() - attemptStart }));
+        return result.object.atGlance;
+      } catch (err) {
+        console.log(JSON.stringify({ tag: "[profile-expert]", expertId: expert.id, traditionId, model: expert.model, attempt, ok: false, durationMs: Date.now() - attemptStart, error: err instanceof Error ? err.message : String(err) }));
+        throw err;
+      }
+    });
+
+    return { traditionId, expertId: expert.id, atGlance };
   } catch (err) {
     return {
       traditionId,
