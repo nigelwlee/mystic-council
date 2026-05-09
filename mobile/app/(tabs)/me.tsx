@@ -1,13 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   View, Text, TextInput, ScrollView, Pressable,
   StyleSheet, ActivityIndicator, KeyboardAvoidingView, Platform,
-  LayoutAnimation, UIManager,
+  LayoutAnimation, UIManager, RefreshControl,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import {
-  fetchChart, fetchProfile, triggerProfileGeneration,
+  fetchChart, fetchProfile,
   westernHeadline, vedicHeadline, chineseHeadline, numerologyHeadline,
   computeTarotBirthCards, tarotHeadline,
 } from '../../lib/chart-api';
@@ -43,58 +43,64 @@ export default function MeTab() {
   const [chartError, setChartError] = useState(false);
 
   const [profileReading, setProfileReading] = useState<ProfileReading | null>(null);
+  const [profileError, setProfileError] = useState(false);
+  const [profileGenerating, setProfileGenerating] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    async function load() {
-      const [
-        { data: birthData },
-        { data: streakData },
-        { data: { user } },
-        { data: { session } },
-      ] = await Promise.all([
-        supabase.from('birth_data').select('*').maybeSingle(),
-        supabase.from('daily_streaks').select('current_streak, longest_streak').maybeSingle(),
-        supabase.auth.getUser(),
-        supabase.auth.getSession(),
-      ]);
+  const load = useCallback(async (isPullRefresh = false) => {
+    if (!isPullRefresh) setLoading(true);
+    const [
+      { data: birthData },
+      { data: streakData },
+      { data: { user } },
+      { data: { session } },
+    ] = await Promise.all([
+      supabase.from('birth_data').select('*').maybeSingle(),
+      supabase.from('daily_streaks').select('current_streak, longest_streak').maybeSingle(),
+      supabase.auth.getUser(),
+      supabase.auth.getSession(),
+    ]);
 
-      if (birthData) {
-        setProfile(birthData);
-        setDraftName(birthData.name ?? '');
-        setDraftDate(birthData.birthdate ?? '');
-        setDraftTime(birthData.birthtime ?? '');
-        setDraftPlace(birthData.birthplace ?? '');
-      }
-      if (streakData) {
-        setStreak({ current: streakData.current_streak, longest: streakData.longest_streak });
-      }
-      const email = user?.email ?? '';
-      setOriginalEmail(email);
-      setDraftEmail(email);
-      setLoading(false);
-
-      // Fetch chart + profile if we have birth data + session
-      if (birthData?.birthdate && session?.access_token) {
-        const bd = {
-          name: birthData.name,
-          date: birthData.birthdate,
-          time: birthData.birthtime,
-          location: birthData.birthplace,
-          latitude: birthData.latitude,
-          longitude: birthData.longitude,
-        };
-        setChartLoading(true);
-        fetchChart({ birthData: bd, date: new Date().toISOString().slice(0, 10), accessToken: session.access_token })
-          .then((c) => setChart(c))
-          .catch(() => setChartError(true))
-          .finally(() => setChartLoading(false));
-        fetchProfile({ birthData: bd, accessToken: session.access_token })
-          .then((p) => setProfileReading(p))
-          .catch(() => {/* non-fatal */});
-      }
+    if (birthData) {
+      setProfile(birthData);
+      setDraftName(birthData.name ?? '');
+      setDraftDate(birthData.birthdate ?? '');
+      setDraftTime(birthData.birthtime ?? '');
+      setDraftPlace(birthData.birthplace ?? '');
     }
-    void load();
+    if (streakData) {
+      setStreak({ current: streakData.current_streak, longest: streakData.longest_streak });
+    }
+    const email = user?.email ?? '';
+    setOriginalEmail(email);
+    setDraftEmail(email);
+    setLoading(false);
+    setRefreshing(false);
+
+    // Fetch chart + profile if we have birth data + session
+    if (birthData?.birthdate && session?.access_token) {
+      const bd = {
+        name: birthData.name,
+        date: birthData.birthdate,
+        time: birthData.birthtime,
+        location: birthData.birthplace,
+        latitude: birthData.latitude,
+        longitude: birthData.longitude,
+      };
+      setChartLoading(true);
+      setChartError(false);
+      fetchChart({ birthData: bd, date: new Date().toISOString().slice(0, 10), accessToken: session.access_token })
+        .then((c) => setChart(c))
+        .catch(() => setChartError(true))
+        .finally(() => setChartLoading(false));
+      setProfileError(false);
+      fetchProfile({ birthData: bd, accessToken: session.access_token })
+        .then((p) => setProfileReading(p))
+        .catch(() => setProfileError(true));
+    }
   }, []);
+
+  useEffect(() => { void load(); }, [load]);
 
   const emailDirty = draftEmail.trim() !== originalEmail;
   const birthDirty =
@@ -147,17 +153,26 @@ export default function MeTab() {
           latitude: draftPlace.trim() !== (profile?.birthplace ?? '') ? null : prev.latitude,
           longitude: draftPlace.trim() !== (profile?.birthplace ?? '') ? null : prev.longitude,
         } : prev);
-        if (!hints.length) hints.push('Saved. Regenerating your chart readings…');
-        // Fire-and-forget profile generation with updated birth data
+        if (!hints.length) hints.push('Saved. Generating your readings…');
+        // Await profile generation so the user knows when it's done
         const { data: { session: sess } } = await supabase.auth.getSession();
         if (sess?.access_token) {
-          triggerProfileGeneration({
-            birthData: {
-              date: draftDate.trim(), time: draftTime.trim() || null,
-              location: draftPlace.trim(), name: draftName.trim(),
-            },
-            accessToken: sess.access_token,
-          });
+          setProfileGenerating(true);
+          const bd = {
+            date: draftDate.trim(), time: draftTime.trim() || null,
+            location: draftPlace.trim(), name: draftName.trim(),
+          };
+          fetchProfile({ birthData: bd, accessToken: sess.access_token, force: true })
+            .then((p) => {
+              setProfileReading(p);
+              setProfileError(false);
+              setHint('Readings updated.');
+            })
+            .catch(() => {
+              setProfileError(true);
+              setHint('Readings could not be generated. Pull down to retry.');
+            })
+            .finally(() => setProfileGenerating(false));
         }
       }
 
@@ -197,6 +212,13 @@ export default function MeTab() {
       <ScrollView
         contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 32 }]}
         keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => { setRefreshing(true); void load(true); }}
+            tintColor="rgba(191,168,130,0.6)"
+          />
+        }
       >
         {/* Header */}
         <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
@@ -295,6 +317,7 @@ export default function MeTab() {
                   headline={chart.traditions.western ? westernHeadline(chart.traditions.western) : null}
                   data={chart.traditions.western ?? null}
                   atGlance={profileReading?.traditions.western?.atGlance}
+                  profileStatus={profileReading?.traditions.western?.status ?? (profileGenerating ? 'loading' : undefined)}
                 />
                 <ChartRow
                   emoji="🔱"
@@ -302,6 +325,7 @@ export default function MeTab() {
                   headline={chart.traditions.vedic ? vedicHeadline(chart.traditions.vedic) : null}
                   data={chart.traditions.vedic ?? null}
                   atGlance={profileReading?.traditions.vedic?.atGlance}
+                  profileStatus={profileReading?.traditions.vedic?.status ?? (profileGenerating ? 'loading' : undefined)}
                 />
                 <ChartRow
                   emoji="🐉"
@@ -309,6 +333,7 @@ export default function MeTab() {
                   headline={chart.traditions.chinese ? chineseHeadline(chart.traditions.chinese) : null}
                   data={chart.traditions.chinese ?? null}
                   atGlance={profileReading?.traditions.chinese?.atGlance}
+                  profileStatus={profileReading?.traditions.chinese?.status ?? (profileGenerating ? 'loading' : undefined)}
                 />
                 <ChartRow
                   emoji="🔢"
@@ -316,6 +341,7 @@ export default function MeTab() {
                   headline={chart.traditions.numerology ? numerologyHeadline(chart.traditions.numerology) : null}
                   data={chart.traditions.numerology ?? null}
                   atGlance={profileReading?.traditions.numerology?.atGlance}
+                  profileStatus={profileReading?.traditions.numerology?.status ?? (profileGenerating ? 'loading' : undefined)}
                 />
                 {tarotCards && (
                   <ChartRow
@@ -327,6 +353,7 @@ export default function MeTab() {
                       'Personality Card': `${tarotCards.personality.name} (${tarotCards.personality.number})`,
                     }}
                     atGlance={profileReading?.traditions.tarot?.atGlance}
+                    profileStatus={profileReading?.traditions.tarot?.status ?? (profileGenerating ? 'loading' : undefined)}
                   />
                 )}
               </View>
@@ -406,19 +433,33 @@ function KVList({ data, depth = 0 }: { data: Record<string, unknown>; depth?: nu
 }
 
 function ChartRow({
-  emoji, label, headline, data, atGlance,
+  emoji, label, headline, data, atGlance, profileStatus,
 }: {
   emoji: string;
   label: string;
   headline: string | null;
   data: Record<string, unknown> | null;
   atGlance?: string | null;
+  profileStatus?: 'ready' | 'failed' | 'loading';
 }) {
   const [open, setOpen] = useState(false);
 
   function toggle() {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setOpen((o) => !o);
+  }
+
+  function renderAtGlance() {
+    if (profileStatus === 'loading') {
+      return <Text style={styles.atGlancePending}>Generating your reading…</Text>;
+    }
+    if (profileStatus === 'failed') {
+      return <Text style={styles.atGlancePending}>Couldn't reach this expert. Pull down to retry.</Text>;
+    }
+    if (atGlance) {
+      return <Text style={styles.atGlance}>{atGlance}</Text>;
+    }
+    return <Text style={styles.atGlancePending}>Your reading is being prepared…</Text>;
   }
 
   return (
@@ -437,10 +478,7 @@ function ChartRow({
       </View>
       {open && data && (
         <View style={styles.chartDetail}>
-          {atGlance
-            ? <Text style={styles.atGlance}>{atGlance}</Text>
-            : <Text style={styles.atGlancePending}>Your reading is being prepared…</Text>
-          }
+          {renderAtGlance()}
           <KVList data={data} />
         </View>
       )}

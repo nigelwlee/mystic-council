@@ -72,7 +72,9 @@ export function patchToolsWithBirthData(
 }
 
 function parseExpertJson(text: string, expertId: string): typeof ExpertContentSchema._type {
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  // Strip markdown code fences before matching
+  const stripped = text.replace(/```(?:json)?\s*/g, "").replace(/```/g, "");
+  const jsonMatch = stripped.match(/\{[\s\S]*\}/);
   if (!jsonMatch) throw new Error(`Expert ${expertId}: no JSON object in response`);
   let raw: unknown;
   try {
@@ -81,6 +83,22 @@ function parseExpertJson(text: string, expertId: string): typeof ExpertContentSc
     throw new Error(`Expert ${expertId}: response is not valid JSON`);
   }
   return ExpertContentSchema.parse(raw);
+}
+
+/** Run fn up to `attempts` times, returning on first success or throwing the last error. */
+export async function runWithRetry<T>(
+  fn: (attempt: number) => Promise<T>,
+  attempts = 2,
+): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      return await fn(i);
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr;
 }
 
 export async function runSingleExpert(
@@ -109,22 +127,37 @@ export async function runSingleExpert(
   const finalUserMessage = chartContext ? `${chartContext}${userMessage}` : userMessage;
 
   const start = Date.now();
-  const EXPERT_TIMEOUT_MS = 60_000;
-  try {
-    const result = await Promise.race([
-      generateText({
-        model: openrouter(expert.model),
-        system: systemPrompt,
-        messages: [{ role: "user", content: finalUserMessage }],
-        tools: patchToolsWithBirthData(expert.tools, birthData),
-        maxSteps: 2,
-      }),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`Expert ${expert.id} timed out after ${EXPERT_TIMEOUT_MS}ms`)), EXPERT_TIMEOUT_MS),
-      ),
-    ]);
+  // 25s per attempt × 2 attempts = 50s max, fits within /api/daily maxDuration=60
+  const EXPERT_TIMEOUT_MS = 25_000;
 
-    const content = parseExpertJson(result.text, expert.id);
+  try {
+    const content = await runWithRetry(async (attempt) => {
+      const attemptStart = Date.now();
+      try {
+        const result = await Promise.race([
+          generateText({
+            model: openrouter(expert.model),
+            system: systemPrompt,
+            messages: [{ role: "user", content: finalUserMessage }],
+            tools: patchToolsWithBirthData(expert.tools, birthData),
+            maxSteps: 4,
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () => reject(new Error(`Expert ${expert.id} timed out after ${EXPERT_TIMEOUT_MS}ms`)),
+              EXPERT_TIMEOUT_MS,
+            ),
+          ),
+        ]);
+        const parsed = parseExpertJson(result.text, expert.id);
+        console.log(JSON.stringify({ tag: "[expert]", expertId: expert.id, traditionId, model: expert.model, attempt, ok: true, durationMs: Date.now() - attemptStart }));
+        return { parsed, result };
+      } catch (err) {
+        console.log(JSON.stringify({ tag: "[expert]", expertId: expert.id, traditionId, model: expert.model, attempt, ok: false, durationMs: Date.now() - attemptStart, error: err instanceof Error ? err.message : String(err) }));
+        throw err;
+      }
+    });
+
     return {
       traditionId: traditionId as ExpertReading["traditionId"],
       expertId: expert.id,
@@ -133,20 +166,20 @@ export async function runSingleExpert(
       color: expert.color,
       textColor: expert.textColor,
       content: {
-        facts: sanitizeField(content.facts),
-        analysis: sanitizeField(content.analysis),
-        summary: sanitizeField(content.summary),
-        oneLiner: sanitizeField(content.oneLiner),
+        facts: sanitizeField(content.parsed.facts),
+        analysis: sanitizeField(content.parsed.analysis),
+        summary: sanitizeField(content.parsed.summary),
+        oneLiner: sanitizeField(content.parsed.oneLiner),
       },
       durationMs: Date.now() - start,
-      usage: result.usage
+      usage: content.result.usage
         ? {
-            promptTokens: result.usage.promptTokens,
-            completionTokens: result.usage.completionTokens,
-            totalTokens: result.usage.totalTokens,
+            promptTokens: content.result.usage.promptTokens,
+            completionTokens: content.result.usage.completionTokens,
+            totalTokens: content.result.usage.totalTokens,
           }
         : undefined,
-      rawText: result.text,
+      rawText: content.result.text,
       systemPrompt,
       model: expert.model,
       userMessage: finalUserMessage,

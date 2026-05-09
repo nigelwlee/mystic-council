@@ -24,7 +24,7 @@ export default function ReadTab() {
   const [oracleCollapsed, setOracleCollapsed] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
-  async function fetchReading() {
+  async function fetchReading(force = false) {
     setLoading(true);
     setError('');
     try {
@@ -41,7 +41,8 @@ export default function ReadTab() {
         return;
       }
 
-      const res = await fetch(`${API_BASE}/api/daily`, {
+      const url = force ? `${API_BASE}/api/daily?force=1` : `${API_BASE}/api/daily`;
+      const res = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -94,7 +95,7 @@ export default function ReadTab() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.dateText}>{dateLabel}</Text>
-        <Pressable onPress={fetchReading} disabled={loading}>
+        <Pressable onPress={() => fetchReading(true)} disabled={loading}>
           <Text style={styles.refreshBtn}>Refresh</Text>
         </Pressable>
       </View>
