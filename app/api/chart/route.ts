@@ -83,11 +83,6 @@ export async function POST(req: Request) {
     drawDailyCards(date, userId),
   ]);
 
-  // Diagnostic: log western sun to catch missing-sunSign regressions
-  if (western) {
-    console.log("[chart/western] sunSign:", (western as Record<string, unknown>).sunSign, "planetKeys:", Object.keys((western as Record<string, unknown>).planets as Record<string, unknown> ?? {}).join(","));
-  }
-
   const result: ChartData = {
     id: crypto.randomUUID(),
     generatedAt: new Date().toISOString(),
