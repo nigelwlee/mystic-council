@@ -92,6 +92,7 @@ export const OracleSchema = z.object({
   oneLiner: z.string(),
   durationMs: z.number().optional(),
   usage: TokenUsageSchema.optional(),
+  error: z.string().optional(),
   systemPrompt: z.string().optional(),
   model: z.string().optional(),
   userMessage: z.string().optional(),
@@ -158,7 +159,73 @@ export const ChartDataSchema = z.object({
   totalDurationMs: z.number().optional(),
 });
 
+// ─── Facet schemas ────────────────────────────────────────────────────────────
+
+export const FacetContentSchema = z.object({
+  oneLiner: z.string(),
+  summary: z.string(),
+  analysis: z.string(),
+  facts: z.string().optional(),
+});
+
+const FacetSetSchema = z.object({
+  health: FacetContentSchema,
+  work: FacetContentSchema,
+  finances: FacetContentSchema,
+  relations: FacetContentSchema,
+  family: FacetContentSchema,
+});
+
+export const FacetExpertOutputSchema = z.object({
+  facets: FacetSetSchema,
+});
+
+export const FacetSynthesisSchema = z.object({
+  keyAction: z.string(),
+  summary: z.string(),
+  oneLiner: z.string(),
+});
+
+const FacetSynthesisSetSchema = z.object({
+  health: FacetSynthesisSchema,
+  work: FacetSynthesisSchema,
+  finances: FacetSynthesisSchema,
+  relations: FacetSynthesisSchema,
+  family: FacetSynthesisSchema,
+});
+
+export const FacetJudgeOutputSchema = z.object({
+  facets: FacetSynthesisSetSchema,
+});
+
+export const FacetExpertResultSchema = z.object({
+  traditionId: TraditionIdSchema,
+  expertId: z.string(),
+  expertName: z.string(),
+  color: z.string(),
+  facets: FacetSetSchema,
+  durationMs: z.number().optional(),
+  usage: TokenUsageSchema.optional(),
+  error: z.string().optional(),
+  model: z.string().optional(),
+});
+
+export const DailyFacetsResponseSchema = z.object({
+  generatedAt: z.string(),
+  totalDurationMs: z.number(),
+  input: ContextInputSchema,
+  oracle: z.object({ facets: FacetSynthesisSetSchema }),
+  experts: z.array(FacetExpertResultSchema),
+});
+
 // ─── Inferred types ───────────────────────────────────────────────────────────
+
+export type FacetContent = z.infer<typeof FacetContentSchema>;
+export type FacetExpertOutput = z.infer<typeof FacetExpertOutputSchema>;
+export type FacetSynthesis = z.infer<typeof FacetSynthesisSchema>;
+export type FacetJudgeOutput = z.infer<typeof FacetJudgeOutputSchema>;
+export type FacetExpertResult = z.infer<typeof FacetExpertResultSchema>;
+export type DailyFacetsResponse = z.infer<typeof DailyFacetsResponseSchema>;
 
 export type TraditionId = z.infer<typeof TraditionIdSchema>;
 export type TokenUsage = z.infer<typeof TokenUsageSchema>;

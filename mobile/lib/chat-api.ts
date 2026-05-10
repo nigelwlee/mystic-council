@@ -4,6 +4,7 @@ export interface ChatOracle {
   summary: string;
   oneLiner: string;
   chimers?: string[];
+  error?: string;
 }
 
 export interface ChatExpertContent {
