@@ -12,7 +12,7 @@ import type { DailyFacetsResponse, FacetExpertResult } from "@/lib/api/schemas";
 import { createClient } from "@/lib/supabase/server";
 import { makeSeededTarotTools } from "@/lib/tools/tarot";
 
-export const maxDuration = 60;
+export const maxDuration = 180;
 
 const FACETS = ["health", "work", "finances", "relations", "family"] as const;
 
@@ -83,7 +83,7 @@ export async function POST(req: Request) {
         e.id === "madame-crow"
           ? { ...e, tools: makeSeededTarotTools(date) }
           : e;
-      return runFacetExpert(expertWithSeed, facetMessage, birthData, ctx);
+      return runFacetExpert(expertWithSeed, facetMessage, birthData, ctx, 1);
     })
   );
 
@@ -135,24 +135,31 @@ export async function POST(req: Request) {
 
   const judgeUserMessage = `Synthesize the five-facet readings for ${date}. Produce keyAction, summary, and oneLiner for each of health, work, finances, relations, and family.`;
 
+  const JUDGE_TIMEOUT_MS = 30_000;
+
   let oracleFacets: DailyFacetsResponse["oracle"]["facets"];
   try {
     const judgeResult = await runWithRetry(async (attempt) => {
       const attemptStart = Date.now();
       try {
-        const result = await generateObject({
-          model: openrouter(judgeConfig.model),
-          system: judgeSystemPrompt,
-          messages: [{ role: "user", content: judgeUserMessage }],
-          schema: FacetJudgeOutputSchema,
-        });
+        const result = await Promise.race([
+          generateObject({
+            model: openrouter(judgeConfig.model),
+            system: judgeSystemPrompt,
+            messages: [{ role: "user", content: judgeUserMessage }],
+            schema: FacetJudgeOutputSchema,
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error(`Facets judge timed out after ${JUDGE_TIMEOUT_MS}ms`)), JUDGE_TIMEOUT_MS)
+          ),
+        ]);
         console.log(JSON.stringify({ tag: "[facet-judge]", model: judgeConfig.model, attempt, ok: true, durationMs: Date.now() - attemptStart }));
         return result;
       } catch (err) {
         console.log(JSON.stringify({ tag: "[facet-judge]", model: judgeConfig.model, attempt, ok: false, durationMs: Date.now() - attemptStart, error: err instanceof Error ? err.message : String(err) }));
         throw err;
       }
-    }, 3);
+    }, 1);
     oracleFacets = judgeResult.object.facets;
   } catch (err) {
     console.log(JSON.stringify({ tag: "[facet-judge]", event: "judge_failed", error: err instanceof Error ? err.message : String(err) }));

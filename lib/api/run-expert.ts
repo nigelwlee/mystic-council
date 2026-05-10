@@ -231,6 +231,7 @@ export async function runFacetExpert(
   userMessage: string,
   birthData: BirthData | null,
   chartContext?: string | null,
+  attempts = 2,
 ): Promise<FacetExpertResult> {
   const [knowledge, promptTemplate] = await Promise.all([
     loadKnowledge(expert.knowledgePath),
@@ -279,7 +280,7 @@ export async function runFacetExpert(
         console.log(JSON.stringify({ tag: "[facet-expert]", expertId: expert.id, traditionId, model: expert.model, attempt, ok: false, durationMs: Date.now() - attemptStart, error: err instanceof Error ? err.message : String(err) }));
         throw err;
       }
-    });
+    }, attempts);
 
     const facets = content.parsed.facets;
 
