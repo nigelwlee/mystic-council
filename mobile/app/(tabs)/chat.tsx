@@ -50,6 +50,7 @@ type AssistantMsg = {
   oracle?: ChatOracle;
   experts?: ChatExpertReading[];
   isError?: boolean;
+  retryQuestion?: string;
 };
 type Msg = UserMsg | AssistantMsg;
 
@@ -122,7 +123,7 @@ function ChimerAside({ expert }: { expert: ChatExpertReading }) {
   );
 }
 
-function MessageBubble({ item }: { item: Msg }) {
+function MessageBubble({ item, onRetry }: { item: Msg; onRetry?: (q: string) => void }) {
   if (item.role === 'user') {
     return (
       <View style={styles.userBubbleWrap}>
@@ -146,6 +147,11 @@ function MessageBubble({ item }: { item: Msg }) {
         <Text style={[styles.bubbleText, msg.isError && styles.errorText]}>
           {item.content}
         </Text>
+        {msg.isError && msg.retryQuestion && onRetry && (
+          <Pressable onPress={() => onRetry(msg.retryQuestion!)} style={styles.retryBtn}>
+            <Text style={styles.retryText}>Try again</Text>
+          </Pressable>
+        )}
       </View>
       {chimerExperts.length > 0 && (
         <View style={styles.chimersWrap}>
@@ -253,6 +259,7 @@ export default function ChatTab() {
           accessToken,
         });
 
+        const oracleError = result.oracle.error;
         const content = result.oracle.summary || result.oracle.oneLiner;
         const assistantMsg: Msg = {
           role: 'assistant',
@@ -260,6 +267,8 @@ export default function ChatTab() {
           createdAt: new Date().toISOString(),
           oracle: result.oracle,
           experts: result.experts,
+          isError: !!oracleError,
+          retryQuestion: oracleError ? q : undefined,
         };
         setMessages((prev) => [...prev, assistantMsg]);
 
@@ -321,7 +330,7 @@ export default function ChatTab() {
       <FlatList
         ref={flatListRef}
         data={messages}
-        renderItem={({ item }) => <MessageBubble item={item} />}
+        renderItem={({ item }) => <MessageBubble item={item} onRetry={(q) => void send(q)} />}
         keyExtractor={(_, i) => i.toString()}
         contentContainerStyle={[
           styles.listContent,
@@ -462,6 +471,8 @@ const styles = StyleSheet.create({
 
   bubbleText: { fontSize: 15, color: '#F5F0E8', lineHeight: 22 },
   errorText: { color: '#F87171' },
+  retryBtn: { marginTop: 8, alignSelf: 'flex-start' },
+  retryText: { fontSize: 13, color: '#F87171', textDecorationLine: 'underline', fontFamily: 'Courier' },
 
   // Chimer asides
   chimersWrap: { maxWidth: '88%', marginTop: 2 },

@@ -257,14 +257,25 @@ export async function synthesize(
     "\n\n" + FORMAT_RULES;
 
   const judgeStart = Date.now();
+  const JUDGE_ATTEMPTS = 3;
 
   try {
-    const judgeResult = await generateObject({
-      model: openrouter(opts.judgeConfig.model),
-      system: judgeSystemPrompt,
-      messages: [{ role: "user", content: opts.userMessage }],
-      schema: JudgeOutputSchema,
-    });
+    const judgeResult = await runWithRetry(async (attempt) => {
+      const attemptStart = Date.now();
+      try {
+        const result = await generateObject({
+          model: openrouter(opts.judgeConfig.model),
+          system: judgeSystemPrompt,
+          messages: [{ role: "user", content: opts.userMessage }],
+          schema: JudgeOutputSchema,
+        });
+        console.log(JSON.stringify({ tag: "[judge]", model: opts.judgeConfig.model, attempt, ok: true, durationMs: Date.now() - attemptStart }));
+        return result;
+      } catch (err) {
+        console.log(JSON.stringify({ tag: "[judge]", event: "judge_retry_attempt", model: opts.judgeConfig.model, userMessageLen: opts.userMessage.length, errorClass: err instanceof Error ? err.constructor.name : "Unknown", attempt, ok: false, durationMs: Date.now() - attemptStart, error: err instanceof Error ? err.message : String(err) }));
+        throw err;
+      }
+    }, JUDGE_ATTEMPTS);
 
     return {
       summary: judgeResult.object.summary,
@@ -282,9 +293,11 @@ export async function synthesize(
       userMessage: opts.userMessage,
     };
   } catch (err) {
+    console.log(JSON.stringify({ event: "judge_synthesis_failed", model: opts.judgeConfig.model, userMessageLen: opts.userMessage.length, errorClass: err instanceof Error ? err.constructor.name : "Unknown", attempts: JUDGE_ATTEMPTS }));
     return {
       summary: "The council was unable to synthesize a verdict.",
-      oneLiner: err instanceof Error ? err.message : String(err),
+      oneLiner: "The Oracle fell silent — please try again.",
+      error: err instanceof Error ? err.message : String(err),
       durationMs: Date.now() - judgeStart,
       systemPrompt: judgeSystemPrompt,
       model: opts.judgeConfig.model,
