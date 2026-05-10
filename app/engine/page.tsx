@@ -13,6 +13,7 @@ if (process.env.NODE_ENV !== "development") {
 type EndpointId =
   | "council"
   | "daily"
+  | "daily/facets"
   | "expert/western"
   | "expert/chinese"
   | "expert/vedic"
@@ -23,6 +24,7 @@ type EndpointId =
 const ENDPOINTS: { id: EndpointId; label: string; desc: string }[] = [
   { id: "chart", label: "Chart", desc: "No-LLM raw tool outputs only" },
   { id: "daily", label: "Daily", desc: "Today's daily reading" },
+  { id: "daily/facets", label: "Facets", desc: "5 life areas — health/work/finances/relations/family" },
   { id: "council", label: "Council", desc: "Full Q&A — all 5 experts + Oracle" },
   { id: "expert/western", label: "Western", desc: "Stella · birth chart + transits" },
   { id: "expert/chinese", label: "Chinese", desc: "Master Wei · Ba Zi + lunar" },
@@ -291,7 +293,145 @@ function SkelExpertCard() {
   );
 }
 
+function FacetsSkeleton() {
+  const FACET_LABELS = ["Health", "Work", "Finances", "Relations", "Family"];
+  return (
+    <div className="opacity-40">
+      <div className="flex items-center gap-3 mb-4 text-[10px] font-mono text-neutral-700">
+        <span className="uppercase tracking-widest">POST /api/daily/facets</span>
+        <span className="ml-auto italic">— select inputs and click Run —</span>
+      </div>
+      <div className="flex gap-2 mb-4">
+        {FACET_LABELS.map((f) => (
+          <div key={f} className="px-3 py-1 border border-neutral-800 text-[10px] font-mono text-neutral-700">{f}</div>
+        ))}
+      </div>
+      <div className="space-y-4">
+        {FACET_LABELS.map((f) => (
+          <div key={f} className="border border-neutral-800 p-3">
+            <div className="text-[10px] font-mono text-neutral-700 mb-2 uppercase">{f}</div>
+            <div className="h-3 bg-neutral-900 w-2/3 mb-2" />
+            <div className="space-y-1.5">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <div className="w-3 h-3 bg-neutral-900" />
+                  <div className="h-2 bg-neutral-900 flex-1" />
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function FacetsResultPanel({ result, inputJson }: { result: Record<string, unknown>; inputJson: string }) {
+  const FACET_KEYS = ["health", "work", "finances", "relations", "family"] as const;
+  const [activeFacet, setActiveFacet] = useState<typeof FACET_KEYS[number]>("health");
+
+  const oracle = result.oracle as { facets: Record<string, { keyAction: string; summary: string; oneLiner: string }> } | undefined;
+  const experts = Array.isArray(result.experts) ? result.experts as Record<string, unknown>[] : [];
+  const serverMs = result.totalDurationMs as number | undefined;
+
+  const activeSynthesis = oracle?.facets?.[activeFacet];
+
+  return (
+    <div>
+      <div className="flex items-center gap-3 mb-4 text-[10px] font-mono text-neutral-600 flex-wrap">
+        <span className="uppercase tracking-widest">POST /api/daily/facets</span>
+        {serverMs != null && <span>{serverMs}ms</span>}
+        <div className="ml-auto flex gap-2">
+          <CopyButton value={JSON.stringify(result, null, 2)} label="Copy payload" />
+          <CopyButton
+            value={`POST /api/daily/facets\n${inputJson}\n\n--- response ---\n${JSON.stringify(result, null, 2)}`}
+            label="Copy debug bundle"
+          />
+        </div>
+      </div>
+
+      {/* Facet tab strip */}
+      <div className="flex gap-1 mb-4">
+        {FACET_KEYS.map((f) => (
+          <button
+            key={f}
+            onClick={() => setActiveFacet(f)}
+            className={`px-3 py-1 text-[10px] font-mono uppercase tracking-wider transition-colors border ${
+              activeFacet === f
+                ? "border-neutral-500 text-neutral-200 bg-neutral-800"
+                : "border-neutral-800 text-neutral-600 hover:text-neutral-400"
+            }`}
+          >
+            {f}
+          </button>
+        ))}
+      </div>
+
+      {/* Oracle synthesis for active facet */}
+      {activeSynthesis && (
+        <div className="border border-neutral-700 bg-neutral-900/50 p-3 mb-4 max-w-2xl">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-neutral-600 mb-2">◈ Oracle — {activeFacet}</div>
+          <div className="text-sm font-semibold text-amber-400/80 mb-1">{activeSynthesis.keyAction}</div>
+          <div className="text-xs text-neutral-300 mb-1">{activeSynthesis.oneLiner}</div>
+          <div className="text-xs text-neutral-400 leading-relaxed">{activeSynthesis.summary}</div>
+        </div>
+      )}
+
+      {/* Expert rows for active facet */}
+      {experts.length > 0 && (
+        <section className="mb-6">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-neutral-600 mb-2">
+            Experts ({experts.length}) — {activeFacet}
+          </div>
+          <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))" }}>
+            {experts.map((e, i) => {
+              const facets = e.facets as Record<string, { oneLiner: string; summary: string; analysis: string; facts?: string }> | undefined;
+              const fc = facets?.[activeFacet];
+              const hasError = Boolean(e.error);
+              return (
+                <div
+                  key={i}
+                  className="border border-neutral-800 overflow-hidden flex flex-col"
+                  style={{ borderLeftColor: (e.color as string) ?? "#555", borderLeftWidth: 3 }}
+                >
+                  <div className="flex items-center gap-2 px-3 py-2 bg-neutral-900">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-mono text-neutral-300 truncate">{e.expertName as string}</div>
+                      <div className="text-[10px] text-neutral-600">
+                        {e.traditionId as string}
+                        {e.durationMs != null && ` · ${e.durationMs as number}ms`}
+                      </div>
+                    </div>
+                    {hasError && (
+                      <span className="text-[10px] bg-red-900/50 text-red-300 px-1.5 py-0.5">error</span>
+                    )}
+                  </div>
+                  {hasError ? (
+                    <div className="px-3 py-2 text-[11px] text-red-400 font-mono">{e.error as string}</div>
+                  ) : fc ? (
+                    <div className="px-3 py-2 space-y-1.5 text-xs text-neutral-300">
+                      <div className="font-medium text-neutral-100">{fc.oneLiner}</div>
+                      <div className="text-neutral-400 text-[11px]">{fc.summary}</div>
+                      <div className="text-neutral-500 text-[10px]">{fc.analysis}</div>
+                      {fc.facts && <div className="text-neutral-600 text-[10px] font-mono">{fc.facts}</div>}
+                    </div>
+                  ) : (
+                    <div className="px-3 py-2 text-[11px] text-neutral-600 italic">no data for {activeFacet}</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      <RawJson data={result} />
+    </div>
+  );
+}
+
 function Skeleton({ endpoint }: { endpoint: EndpointId }) {
+  if (endpoint === "daily/facets") return <FacetsSkeleton />;
   const showExperts = endpoint === "council" || endpoint === "daily";
   const showSingleExpert = endpoint.startsWith("expert/");
   const showOracle = endpoint === "council" || endpoint === "daily";
@@ -604,7 +744,10 @@ export default function EngineInspector() {
         )}
 
         {/* Result */}
-        {result && !isLoading && (
+        {result && !isLoading && endpoint === "daily/facets" && (
+          <FacetsResultPanel result={result} inputJson={inputJson} />
+        )}
+        {result && !isLoading && endpoint !== "daily/facets" && (
           <ResultPanel endpoint={endpoint} result={result} inputJson={inputJson} />
         )}
 

@@ -4,6 +4,8 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { supabase } from '../../lib/supabase';
+import { FacetSection } from '../../components/FacetSection';
+import { fetchDailyFacets } from '../../lib/facets-api';
 
 const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL!;
 
@@ -23,6 +25,13 @@ export default function ReadTab() {
   const [error, setError] = useState('');
   const [oracleCollapsed, setOracleCollapsed] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
+  const [mobileBirthData, setMobileBirthData] = useState<{
+    name?: string | null; date?: string | null; time?: string | null;
+    location?: string | null; latitude?: number | null; longitude?: number | null;
+  } | null>(null);
+
+  const todayDate = new Date().toISOString().slice(0, 10);
 
   async function fetchReading(force = false) {
     setLoading(true);
@@ -41,6 +50,19 @@ export default function ReadTab() {
         return;
       }
 
+      const mapped = {
+        name: birthData.name,
+        date: birthData.birthdate,
+        time: birthData.birthtime,
+        location: birthData.birthplace,
+        latitude: birthData.latitude,
+        longitude: birthData.longitude,
+      };
+
+      // Store for FacetSection use
+      setSessionToken(session.access_token);
+      setMobileBirthData(mapped);
+
       const url = force ? `${API_BASE}/api/daily?force=1` : `${API_BASE}/api/daily`;
       const res = await fetch(url, {
         method: 'POST',
@@ -49,15 +71,8 @@ export default function ReadTab() {
           'Authorization': `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({
-          birthData: {
-            name: birthData.name,
-            date: birthData.birthdate,
-            time: birthData.birthtime,
-            location: birthData.birthplace,
-            latitude: birthData.latitude,
-            longitude: birthData.longitude,
-          },
-          date: new Date().toISOString().slice(0, 10),
+          birthData: mapped,
+          date: todayDate,
         }),
       });
 
@@ -87,7 +102,7 @@ export default function ReadTab() {
         .filter(Boolean)
     : [];
 
-  const dateLabel = new Date().toLocaleDateString('en-US', {
+  const dateLabel = new Date(todayDate + 'T12:00:00').toLocaleDateString('en-US', {
     weekday: 'long', month: 'long', day: 'numeric',
   }).toUpperCase();
 
@@ -187,6 +202,16 @@ export default function ReadTab() {
               </Pressable>
             );
           })}
+
+          {/* AREAS OF LIFE — Facet section */}
+          {sessionToken && (
+            <FacetSection
+              birthData={mobileBirthData}
+              date={todayDate}
+              accessToken={sessionToken}
+              onFetch={fetchDailyFacets}
+            />
+          )}
 
           {/* ASK THE COUNCIL */}
           <Pressable
