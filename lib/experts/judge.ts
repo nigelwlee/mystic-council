@@ -23,3 +23,7 @@ export async function loadJudgeDailyPrompt(): Promise<string> {
 export async function loadJudgeChatPrompt(): Promise<string> {
   return loadSystemPrompt(ORACLE_FOLDER, "chat");
 }
+
+export async function loadJudgeFacetsPrompt(): Promise<string> {
+  return loadSystemPrompt(ORACLE_FOLDER, "facets");
+}

@@ -5,9 +5,9 @@ import { loadKnowledge, loadSystemPrompt } from "@/lib/knowledge/loader";
 import { EXPERT_ID_TO_TRADITION } from "@/lib/constants/traditions";
 import { VOICE_RULES, voiceRulesForTradition } from "@/lib/voice";
 import { FORMAT_RULES, sanitizeField } from "@/lib/format";
-import { ExpertContentSchema } from "@/lib/api/schemas";
+import { ExpertContentSchema, FacetExpertOutputSchema } from "@/lib/api/schemas";
 import type { BirthData, ExpertConfig } from "@/lib/experts/types";
-import type { ExpertReading, Oracle } from "@/lib/api/schemas";
+import type { ExpertReading, Oracle, FacetExpertResult } from "@/lib/api/schemas";
 import type { CoreTool } from "ai";
 
 const openrouter = createOpenAI({
@@ -198,6 +198,154 @@ export async function runSingleExpert(
       systemPrompt,
       model: expert.model,
       userMessage: finalUserMessage,
+    };
+  }
+}
+
+// ─── Facet expert runner ──────────────────────────────────────────────────────
+
+/**
+ * Parse a facet JSON response from raw LLM text.
+ * Strips markdown fences, finds the JSON object, and validates against FacetExpertOutputSchema.
+ */
+function parseFacetJson(text: string, expertId: string): typeof FacetExpertOutputSchema._type {
+  const stripped = text.replace(/```(?:json)?\s*/g, "").replace(/```/g, "");
+  const jsonMatch = stripped.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) throw new Error(`Facet expert ${expertId}: no JSON object in response`);
+  let raw: unknown;
+  try {
+    raw = JSON.parse(jsonMatch[0]);
+  } catch {
+    throw new Error(`Facet expert ${expertId}: response is not valid JSON`);
+  }
+  return FacetExpertOutputSchema.parse(raw);
+}
+
+/**
+ * Run a single expert using the facet system prompt variant.
+ * Each expert returns all 5 facets (health/work/finances/relations/family) in one call.
+ * Uses generateText + JSON parse (same pattern as runSingleExpert) to support tool-using experts like tarot.
+ */
+export async function runFacetExpert(
+  expert: ExpertConfig,
+  userMessage: string,
+  birthData: BirthData | null,
+  chartContext?: string | null,
+): Promise<FacetExpertResult> {
+  const [knowledge, promptTemplate] = await Promise.all([
+    loadKnowledge(expert.knowledgePath),
+    loadSystemPrompt(expert.knowledgePath, "facets"),
+  ]);
+  const birthDataStr = formatBirthData(birthData);
+
+  const traditionId = EXPERT_ID_TO_TRADITION[expert.id];
+  if (!traditionId) throw new Error(`Unknown expertId: ${expert.id}`);
+
+  const systemPrompt =
+    promptTemplate
+      .replace("{knowledge}", knowledge)
+      .replace("{birthData}", birthDataStr) +
+    "\n\n" + voiceRulesForTradition(traditionId) +
+    "\n\n" + FORMAT_RULES;
+
+  const finalUserMessage = chartContext ? `${chartContext}${userMessage}` : userMessage;
+
+  const start = Date.now();
+  const EXPERT_TIMEOUT_MS = 35_000; // facet calls are bigger — allow more time
+
+  try {
+    const content = await runWithRetry(async (attempt) => {
+      const attemptStart = Date.now();
+      try {
+        const result = await Promise.race([
+          generateText({
+            model: openrouter(expert.model),
+            system: systemPrompt,
+            messages: [{ role: "user", content: finalUserMessage }],
+            tools: patchToolsWithBirthData(expert.tools, birthData),
+            maxSteps: 4,
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () => reject(new Error(`Facet expert ${expert.id} timed out after ${EXPERT_TIMEOUT_MS}ms`)),
+              EXPERT_TIMEOUT_MS,
+            ),
+          ),
+        ]);
+        const parsed = parseFacetJson(result.text, expert.id);
+        console.log(JSON.stringify({ tag: "[facet-expert]", expertId: expert.id, traditionId, model: expert.model, attempt, ok: true, durationMs: Date.now() - attemptStart }));
+        return { parsed, result };
+      } catch (err) {
+        console.log(JSON.stringify({ tag: "[facet-expert]", expertId: expert.id, traditionId, model: expert.model, attempt, ok: false, durationMs: Date.now() - attemptStart, error: err instanceof Error ? err.message : String(err) }));
+        throw err;
+      }
+    });
+
+    const facets = content.parsed.facets;
+
+    return {
+      traditionId: traditionId as FacetExpertResult["traditionId"],
+      expertId: expert.id,
+      expertName: expert.name,
+      color: expert.color,
+      facets: {
+        health: {
+          oneLiner: sanitizeField(facets.health.oneLiner),
+          summary: sanitizeField(facets.health.summary),
+          analysis: sanitizeField(facets.health.analysis),
+          facts: facets.health.facts ? sanitizeField(facets.health.facts) : undefined,
+        },
+        work: {
+          oneLiner: sanitizeField(facets.work.oneLiner),
+          summary: sanitizeField(facets.work.summary),
+          analysis: sanitizeField(facets.work.analysis),
+          facts: facets.work.facts ? sanitizeField(facets.work.facts) : undefined,
+        },
+        finances: {
+          oneLiner: sanitizeField(facets.finances.oneLiner),
+          summary: sanitizeField(facets.finances.summary),
+          analysis: sanitizeField(facets.finances.analysis),
+          facts: facets.finances.facts ? sanitizeField(facets.finances.facts) : undefined,
+        },
+        relations: {
+          oneLiner: sanitizeField(facets.relations.oneLiner),
+          summary: sanitizeField(facets.relations.summary),
+          analysis: sanitizeField(facets.relations.analysis),
+          facts: facets.relations.facts ? sanitizeField(facets.relations.facts) : undefined,
+        },
+        family: {
+          oneLiner: sanitizeField(facets.family.oneLiner),
+          summary: sanitizeField(facets.family.summary),
+          analysis: sanitizeField(facets.family.analysis),
+          facts: facets.family.facts ? sanitizeField(facets.family.facts) : undefined,
+        },
+      },
+      durationMs: Date.now() - start,
+      usage: content.result.usage
+        ? {
+            promptTokens: content.result.usage.promptTokens,
+            completionTokens: content.result.usage.completionTokens,
+            totalTokens: content.result.usage.totalTokens,
+          }
+        : undefined,
+      model: expert.model,
+    };
+  } catch (err) {
+    return {
+      traditionId: traditionId as FacetExpertResult["traditionId"],
+      expertId: expert.id,
+      expertName: expert.name,
+      color: expert.color,
+      facets: {
+        health:    { oneLiner: "", summary: "", analysis: "" },
+        work:      { oneLiner: "", summary: "", analysis: "" },
+        finances:  { oneLiner: "", summary: "", analysis: "" },
+        relations: { oneLiner: "", summary: "", analysis: "" },
+        family:    { oneLiner: "", summary: "", analysis: "" },
+      },
+      durationMs: Date.now() - start,
+      error: err instanceof Error ? err.message : String(err),
+      model: expert.model,
     };
   }
 }
