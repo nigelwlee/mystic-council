@@ -135,13 +135,18 @@ export async function runSingleExpert(
     const content = await runWithRetry(async (attempt) => {
       const attemptStart = Date.now();
       try {
+        // When chart facts are already injected as context, skip tool calls entirely
+        const toolsArg = chartContext
+          ? {}
+          : patchToolsWithBirthData(expert.tools, birthData);
+        const maxStepsArg = chartContext ? 1 : 4;
         const result = await Promise.race([
           generateText({
             model: openrouter(expert.model),
             system: systemPrompt,
             messages: [{ role: "user", content: finalUserMessage }],
-            tools: patchToolsWithBirthData(expert.tools, birthData),
-            maxSteps: 4,
+            tools: toolsArg,
+            maxSteps: maxStepsArg,
           }),
           new Promise<never>((_, reject) =>
             setTimeout(
@@ -259,7 +264,7 @@ export async function synthesize(
     "\n\n" + FORMAT_RULES;
 
   const judgeStart = Date.now();
-  const JUDGE_ATTEMPTS = 3;
+  const JUDGE_ATTEMPTS = 2;
 
   try {
     const JUDGE_TIMEOUT_MS = 30_000;

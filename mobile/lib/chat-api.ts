@@ -45,14 +45,21 @@ interface AskCouncilParams {
 
 export async function askCouncil(params: AskCouncilParams): Promise<ChatCouncilResponse> {
   const { question, birthData, date, accessToken, chart } = params;
-  const res = await fetch(`${API_BASE}/api/council`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${accessToken}`,
-    },
-    body: JSON.stringify({ question, birthData, date, ...(chart ? { chart } : {}) }),
-  });
-  if (!res.ok) throw new Error(`Council API error ${res.status}`);
-  return res.json() as Promise<ChatCouncilResponse>;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 95_000);
+  try {
+    const res = await fetch(`${API_BASE}/api/council`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ question, birthData, date, ...(chart ? { chart } : {}) }),
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`Council API error ${res.status}`);
+    return res.json() as Promise<ChatCouncilResponse>;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
