@@ -55,22 +55,31 @@ export default function ReadTab() {
       };
 
       const url = force ? `${API_BASE}/api/daily?force=1` : `${API_BASE}/api/daily`;
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({
-          birthData: mapped,
-          date: todayDate,
-        }),
-      });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 95_000);
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            birthData: mapped,
+            date: todayDate,
+          }),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
 
       if (!res.ok) throw new Error(`API error ${res.status}`);
       const json = await res.json();
       setReading(json);
     } catch (e: any) {
+      setReading(null);
       setError(e.message ?? 'Failed to fetch reading');
     } finally {
       setLoading(false);

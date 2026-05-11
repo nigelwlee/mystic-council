@@ -10,11 +10,12 @@ import { VOICE_RULES } from "@/lib/voice";
 import { FORMAT_RULES } from "@/lib/format";
 import type { DailyReadingResponse, ExpertReading } from "@/lib/api/schemas";
 import { createClient } from "@/lib/supabase/server";
+import { adminClient } from "@/lib/supabase/admin";
 import { makeSeededTarotTools } from "@/lib/tools/tarot";
 import { IS_MOCK_MODE, mockDelay, mockDailyReading } from "@/lib/mock";
 import { bumpStreak } from "@/lib/api/streak";
 
-export const maxDuration = 60;
+export const maxDuration = 90;
 
 const openrouter = createOpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
@@ -31,9 +32,22 @@ export async function POST(req: Request) {
   const { birthData, date, chart } = parsed.data;
   const start = Date.now();
 
-  // Resolve authenticated user (if any) via Supabase session cookie
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  // Prefer Bearer token (mobile); fall back to cookie session (web)
+  const authHeader = req.headers.get("Authorization");
+  let user: { id: string } | null = null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let dbClient: any;
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = authHeader.slice(7);
+    const { data: { user: u } } = await adminClient.auth.getUser(token);
+    user = u;
+    dbClient = adminClient;
+  } else {
+    const supabase = await createClient();
+    const { data: { user: u } } = await supabase.auth.getUser();
+    user = u;
+    dbClient = supabase;
+  }
 
   // Geocode birth location if lat/lng missing (mobile sends null from DB when not yet geocoded)
   if (birthData && !birthData.latitude && !birthData.longitude && birthData.location) {
@@ -48,7 +62,7 @@ export async function POST(req: Request) {
         birthData.longitude = parseFloat(parseFloat(geoData[0].lon).toFixed(4));
         // Persist back so the Me tab can display them
         if (user) {
-          void supabase
+          void dbClient
             .from("birth_data")
             .update({ latitude: birthData.latitude, longitude: birthData.longitude })
             .eq("user_id", user.id);
@@ -61,7 +75,7 @@ export async function POST(req: Request) {
 
   // Cache check: if authenticated and not in mock mode, return cached daily reading
   if (user && !IS_MOCK_MODE && !force) {
-    const { data: cached } = await supabase
+    const { data: cached } = await dbClient
       .from("readings")
       .select("output")
       .eq("user_id", user.id)
@@ -151,7 +165,7 @@ export async function POST(req: Request) {
           setTimeout(() => reject(new Error("Judge timed out after 30s")), 30_000),
         ),
       ]);
-    }, 3);
+    }, 2);
     oracle = {
       summary: judgeResult.object.summary,
       oneLiner: judgeResult.object.oneLiner,
@@ -191,7 +205,7 @@ export async function POST(req: Request) {
 
   // Persist to Supabase if user is authenticated
   if (user) {
-    const { error: dbError } = await supabase
+    const { error: dbError } = await dbClient
       .from("readings")
       .upsert(
         {

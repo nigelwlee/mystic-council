@@ -90,8 +90,18 @@ export async function POST(req: Request) {
   const { birthData } = parsed.data;
   const force = new URL(req.url).searchParams.get("force") === "1";
 
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  // Prefer Bearer token (mobile); fall back to cookie session (web)
+  const authHeader = req.headers.get("Authorization");
+  let user: { id: string } | null = null;
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = authHeader.slice(7);
+    const { data: { user: u } } = await adminClient.auth.getUser(token);
+    user = u;
+  } else {
+    const supabase = await createClient();
+    const { data: { user: u } } = await supabase.auth.getUser();
+    user = u;
+  }
   if (!user) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -198,7 +208,7 @@ export async function POST(req: Request) {
           r.status === "rejected"
             ? r.reason instanceof Error ? r.reason.message : String(r.reason)
             : r.value.error ?? "Failed";
-        console.warn(`[profile] expert ${expert.id} failed: ${errMsg}`);
+        console.log(JSON.stringify({ tag: "[profile-expert]", expertId: expert.id, traditionId: tid, ok: false, error: errMsg }));
         newTraditions[tid] = { atGlance: "", status: "failed" };
       }
     })
