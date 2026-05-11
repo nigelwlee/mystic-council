@@ -50,7 +50,7 @@ export async function POST(req: Request) {
 
     bd.date
       ? chineseAstrologyTools.calculateChineseChart.execute!(
-          { date: bd.date, time: bd.time, readingDate: date },
+          { date: bd.date, time: bd.time ?? undefined, readingDate: date },
           {} as never
         )
       : Promise.resolve(null),
