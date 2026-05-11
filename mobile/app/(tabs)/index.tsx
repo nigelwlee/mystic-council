@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   View, Text, ScrollView, Pressable, ActivityIndicator, StyleSheet,
 } from 'react-native';
@@ -24,6 +24,7 @@ export default function ReadTab() {
   const [error, setError] = useState('');
   const [oracleCollapsed, setOracleCollapsed] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const scrollViewRef = useRef<ScrollView>(null);
 
   const todayDate = new Date().toISOString().slice(0, 10);
 
@@ -117,7 +118,7 @@ export default function ReadTab() {
       )}
 
       {reading && !loading && (
-        <ScrollView contentContainerStyle={styles.scroll}>
+        <ScrollView ref={scrollViewRef} contentContainerStyle={styles.scroll}>
 
           {/* Oracle */}
           <View style={styles.oracleSection}>
@@ -196,6 +197,7 @@ export default function ReadTab() {
           {/* AREAS OF LIFE */}
           <AspectCalloutsSection
             aspectCallouts={reading?.oracle?.aspectCallouts ?? []}
+            scrollViewRef={scrollViewRef}
           />
 
           {/* ASK THE COUNCIL */}
