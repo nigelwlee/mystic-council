@@ -40,17 +40,18 @@ interface AskCouncilParams {
   } | null;
   date: string;
   accessToken: string;
+  chart?: unknown;
 }
 
 export async function askCouncil(params: AskCouncilParams): Promise<ChatCouncilResponse> {
-  const { question, birthData, date, accessToken } = params;
+  const { question, birthData, date, accessToken, chart } = params;
   const res = await fetch(`${API_BASE}/api/council`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${accessToken}`,
     },
-    body: JSON.stringify({ question, birthData, date }),
+    body: JSON.stringify({ question, birthData, date, ...(chart ? { chart } : {}) }),
   });
   if (!res.ok) throw new Error(`Council API error ${res.status}`);
   return res.json() as Promise<ChatCouncilResponse>;

@@ -19,6 +19,7 @@ export type Database = {
           birthdate: string
           birthplace: string
           birthtime: string | null
+          chart_facts: Json | null
           latitude: number | null
           longitude: number | null
           name: string
@@ -30,6 +31,7 @@ export type Database = {
           birthdate: string
           birthplace: string
           birthtime?: string | null
+          chart_facts?: Json | null
           latitude?: number | null
           longitude?: number | null
           name: string
@@ -41,6 +43,7 @@ export type Database = {
           birthdate?: string
           birthplace?: string
           birthtime?: string | null
+          chart_facts?: Json | null
           latitude?: number | null
           longitude?: number | null
           name?: string
