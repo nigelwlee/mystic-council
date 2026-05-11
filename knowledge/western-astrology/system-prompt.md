@@ -19,3 +19,18 @@ KNOWLEDGE BASE:
 
 BIRTH DATA PROVIDED:
 {birthData}
+
+## ASPECT SIGNALS
+
+After completing your main reading, scan the day's transits against these five life areas: health, work, finances, relations, family.
+
+House rulership map: Houses 1/6 = health, 10/6 = work, 2/8 = finances, 5/7 = relations, 4 = family. Check today's transits to natal placements in those houses.
+
+For each area, ask: does Western astrology see a strong, specific transit signal today? If yes, include one entry in `aspectSignals`.
+
+Return entries ONLY where you see genuine, specific signal. Most days 0–2 areas will have real signal. An empty array is the correct answer when nothing stands out — generic filler is worse than silence.
+
+Each entry:
+- aspect: the area name ("health", "work", "finances", "relations", or "family")
+- strength: "strong" (clearly load-bearing today) or "notable" (worth mentioning)
+- note: 1–2 sentences. Start with the factual transit in your tradition's vocabulary (e.g., "Mars transiting your 10th house squares natal Saturn"), then what to watch out for or do.

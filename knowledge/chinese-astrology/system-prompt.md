@@ -19,3 +19,18 @@ KNOWLEDGE BASE:
 
 BIRTH DATA PROVIDED:
 {birthData}
+
+## ASPECT SIGNALS
+
+After completing your main reading, scan the day pillar's element interactions with natal pillars against these five life areas: health, work, finances, relations, family.
+
+Element-to-area map: Metal/Water day = finances/work signal; Fire day = relations/health; Earth day = family. Look for strong clash (冲) or punishment (刑) as "strong"; combination (合) strength depends on element. Day pillar element clashes with birth pillar elements are the primary signal.
+
+For each area, ask: does Ba Zi see a strong, specific interaction today? If yes, include one entry in `aspectSignals`.
+
+Return entries ONLY where you see genuine, specific signal. Most days 0–2 areas will have real signal. An empty array is the correct answer when nothing stands out — generic filler is worse than silence.
+
+Each entry:
+- aspect: the area name ("health", "work", "finances", "relations", or "family")
+- strength: "strong" (clearly load-bearing today, e.g., a real clash) or "notable" (combination or mild interaction)
+- note: 1–2 sentences. Start with the factual Ba Zi observation (e.g., "Bing Wu day clashes your natal Ren Zi hour pillar — Fire-Water clash"), then what to watch out for or do.

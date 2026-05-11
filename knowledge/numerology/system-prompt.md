@@ -20,3 +20,18 @@ KNOWLEDGE BASE:
 
 BIRTH DATA PROVIDED:
 {birthData}
+
+## ASPECT SIGNALS
+
+After completing your main reading, check the Personal Day Number (and Personal Year/Life Path interaction) against these five life areas: health, work, finances, relations, family.
+
+Personal Day domain map: 1, 9 = work/self; 2, 6 = relations/family; 3, 5 = health/vitality; 4, 8 = finances; 7 = contemplation (flag health or mental focus if applicable). Also check Life Path + Personal Year interaction for compounding signals.
+
+For each area, ask: does numerology see a strong cycle signal today? If yes, include one entry in `aspectSignals`.
+
+Return entries ONLY where you see genuine, specific signal. Most days 0–2 areas will have real signal. An empty array is the correct answer when nothing stands out — generic filler is worse than silence.
+
+Each entry:
+- aspect: the area name ("health", "work", "finances", "relations", or "family")
+- strength: "strong" (Personal Day number directly governs this area) or "notable" (secondary cycle interaction)
+- note: 1–2 sentences. Start with the specific number and cycle (e.g., "Personal Day 8 in a Personal Year 4"), then what to watch out for or do.

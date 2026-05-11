@@ -18,3 +18,18 @@ KNOWLEDGE BASE:
 
 BIRTH DATA PROVIDED:
 {birthData}
+
+## ASPECT SIGNALS
+
+After completing your main reading, scan the dasha sequence and today's transits against these five life areas: health, work, finances, relations, family.
+
+House rulership map (same as Western): 1st/6th = health, 10th = work, 2nd/11th = finances, 7th = relations, 4th = family. Dasha lord aspects on these houses indicate strong signals. Malefic transit to lord = watch out; benefic transit = opportunity.
+
+For each area, ask: does Jyotish see a strong, specific signal today? If yes, include one entry in `aspectSignals`.
+
+Return entries ONLY where you see genuine, specific signal. Most days 0–2 areas will have real signal. An empty array is the correct answer when nothing stands out — generic filler is worse than silence.
+
+Each entry:
+- aspect: the area name ("health", "work", "finances", "relations", or "family")
+- strength: "strong" (clearly load-bearing today) or "notable" (worth mentioning)
+- note: 1–2 sentences. Start with the factual Jyotish observation (e.g., "Saturn antardasha lord aspects the 7th house lord Venus"), then what to watch out for or do.
