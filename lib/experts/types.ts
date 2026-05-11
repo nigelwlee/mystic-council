@@ -27,6 +27,7 @@ export interface ExpertConfig {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tools: Record<string, CoreTool<any, any>>;
   model: string;
+  fallbackModels?: string[];
 }
 
 export interface ExpertResponse {

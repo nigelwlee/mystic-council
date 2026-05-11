@@ -3,6 +3,8 @@
 const MODEL_PRICING: Record<string, { in: number; out: number }> = {
   "deepseek/deepseek-chat-v3-0324": { in: 0.27, out: 1.10 },
   "deepseek/deepseek-chat": { in: 0.27, out: 1.10 },
+  "qwen/qwen3-235b-a22b": { in: 0.14, out: 0.60 },
+  "moonshotai/kimi-k2": { in: 0.07, out: 0.30 },
   "openai/gpt-4o-mini": { in: 0.15, out: 0.60 },
   "openai/gpt-4o": { in: 2.50, out: 10.00 },
   "anthropic/claude-3-haiku": { in: 0.25, out: 1.25 },

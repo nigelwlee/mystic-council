@@ -5,7 +5,7 @@ import { loadKnowledge, loadSystemPrompt } from "@/lib/knowledge/loader";
 import { EXPERT_ID_TO_TRADITION } from "@/lib/constants/traditions";
 import { voiceRulesForTradition } from "@/lib/voice";
 import { FORMAT_RULES } from "@/lib/format";
-import { formatBirthData, runWithRetry } from "@/lib/api/run-expert";
+import { formatBirthData, runWithFallback } from "@/lib/api/run-expert";
 import { logRun } from "@/lib/api/telemetry";
 import type { BirthData, ExpertConfig } from "@/lib/experts/types";
 
@@ -54,16 +54,17 @@ export async function runProfileExpert(
     ? `${chartContext}Based on this person's birth chart and the facts above, write their "at a glance" profile reading.`
     : "Based on this person's birth data, write their \"at a glance\" profile reading.";
 
-  // 50s per attempt × 2 attempts = 100s max, fits within /api/profile maxDuration=120
-  const TIMEOUT_MS = 50_000;
+  // 35s per attempt × up to 3 models = 105s max, fits within /api/profile maxDuration=120
+  const TIMEOUT_MS = 35_000;
+  const profileModels = [expert.model, ...(expert.fallbackModels ?? [])];
 
   try {
-    const atGlance = await runWithRetry(async (attempt) => {
+    const atGlance = await runWithFallback(profileModels, async (model, attempt) => {
       const attemptStart = Date.now();
       try {
         const result = await Promise.race([
           generateObject({
-            model: openrouter(expert.model),
+            model: openrouter(model),
             system: systemPrompt,
             messages: [{ role: "user", content: userMessage }],
             schema: ProfileSchema,
@@ -74,11 +75,11 @@ export async function runProfileExpert(
           ),
         ]);
         const dm = Date.now() - attemptStart;
-        logRun({ userId, route: "profile", phase: "expert", expertId: expert.id, traditionId, model: expert.model, attempt, ok: true, durationMs: dm });
+        logRun({ userId, route: "profile", phase: "expert", expertId: expert.id, traditionId, model, attempt, ok: true, durationMs: dm });
         return result.object.atGlance;
       } catch (err) {
         const dm = Date.now() - attemptStart;
-        logRun({ userId, route: "profile", phase: "expert", expertId: expert.id, traditionId, model: expert.model, attempt, ok: false, durationMs: dm, error: err instanceof Error ? err.message : String(err) });
+        logRun({ userId, route: "profile", phase: "expert", expertId: expert.id, traditionId, model, attempt, ok: false, durationMs: dm, error: err instanceof Error ? err.message : String(err) });
         throw err;
       }
     });
