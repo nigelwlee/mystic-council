@@ -12,6 +12,7 @@ import type { CouncilReading, Digest, ExpertReading } from "@/lib/api/schemas";
 import { IS_MOCK_MODE, mockDelay } from "@/lib/mock";
 import { bumpStreak } from "@/lib/api/streak";
 import { createClient } from "@/lib/supabase/server";
+import { adminClient } from "@/lib/supabase/admin";
 
 export const maxDuration = 90;
 
@@ -30,9 +31,18 @@ export async function POST(req: Request) {
 
   const start = Date.now();
 
-  // Resolve authenticated user for streak bump (non-blocking)
-  const supabaseClient = await createClient();
-  const { data: { user } } = await supabaseClient.auth.getUser();
+  // Prefer Bearer token (mobile); fall back to cookie session (web)
+  const authHeader = req.headers.get("Authorization");
+  let user: { id: string } | null = null;
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = authHeader.slice(7);
+    const { data: { user: u } } = await adminClient.auth.getUser(token);
+    user = u;
+  } else {
+    const supabaseClient = await createClient();
+    const { data: { user: u } } = await supabaseClient.auth.getUser();
+    user = u;
+  }
 
   if (IS_MOCK_MODE) {
     await mockDelay(800, 1200);
