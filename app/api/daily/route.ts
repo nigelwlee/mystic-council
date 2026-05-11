@@ -1,11 +1,10 @@
 import { generateObject } from "ai";
-import { z } from "zod";
 import { createOpenAI } from "@ai-sdk/openai";
 import { experts } from "@/lib/experts/registry";
 import { judgeConfig, loadJudgePrompt } from "@/lib/experts/judge";
 import { runSingleExpert } from "@/lib/api/run-expert";
 import { EXPERT_ID_TO_TRADITION } from "@/lib/constants/traditions";
-import { ContextInputSchema } from "@/lib/api/schemas";
+import { ContextInputSchema, JudgeDailySchema } from "@/lib/api/schemas";
 import { chartContextForTradition } from "@/lib/api/chart-context";
 import { VOICE_RULES } from "@/lib/voice";
 import { FORMAT_RULES } from "@/lib/format";
@@ -67,7 +66,7 @@ export async function POST(req: Request) {
       .select("output")
       .eq("user_id", user.id)
       .eq("reading_date", date)
-      .eq("kind", "daily")
+      .eq("kind", "daily-v2")
       .maybeSingle();
 
     if (cached?.output) {
@@ -106,7 +105,7 @@ export async function POST(req: Request) {
       expertEmoji: e.emoji,
       color: e.color,
       textColor: e.textColor,
-      content: { facts: "", analysis: "", summary: "", oneLiner: "" },
+      content: { facts: "", analysis: "", summary: "", oneLiner: "", aspectSignals: [] },
       error: r.reason instanceof Error ? r.reason.message : String(r.reason),
     };
   });
@@ -123,7 +122,13 @@ export async function POST(req: Request) {
   }
 
   const expertOutputs = successful
-    .map((r) => `### ${r.expertName}\n${r.content.summary}`)
+    .map((r) => {
+      const signals = r.content.aspectSignals ?? [];
+      const signalBlock = signals.length > 0
+        ? `\nAspect signals:\n${signals.map((s) => `- ${s.aspect} (${s.strength}): ${s.note}`).join("\n")}`
+        : "";
+      return `### ${r.expertName}\n${r.content.summary}${signalBlock}`;
+    })
     .join("\n\n---\n\n");
 
   const judgePrompt = await loadJudgePrompt();
@@ -131,10 +136,6 @@ export async function POST(req: Request) {
   const judgeStart = Date.now();
 
   const judgeUserMessage = `Synthesize a daily reading for ${date} in 2-3 sentences.`;
-  const JudgeDailySchema = z.object({
-    summary: z.string(),
-    oneLiner: z.string(),
-  });
   let oracle: DailyReadingResponse["oracle"];
   try {
     const judgeResult = await generateObject({
@@ -146,6 +147,7 @@ export async function POST(req: Request) {
     oracle = {
       summary: judgeResult.object.summary,
       oneLiner: judgeResult.object.oneLiner,
+      aspectCallouts: judgeResult.object.aspectCallouts ?? [],
       durationMs: Date.now() - judgeStart,
       usage: judgeResult.usage
         ? {
@@ -162,6 +164,7 @@ export async function POST(req: Request) {
     oracle = {
       summary: "The oracle was unable to synthesize today's reading.",
       oneLiner: err instanceof Error ? err.message : String(err),
+      aspectCallouts: [],
       durationMs: Date.now() - judgeStart,
       systemPrompt: judgeSystemPrompt,
       model: judgeConfig.model,
@@ -185,7 +188,7 @@ export async function POST(req: Request) {
       .upsert(
         {
           user_id: user.id,
-          kind: "daily",
+          kind: "daily-v2",
           reading_date: date,
           input: { birthData, date },
           output: reading,

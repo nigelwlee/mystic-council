@@ -21,7 +21,7 @@ export function mockDailyReading(date: string): DailyReadingResponse {
       textColor: r.textColor,
       content:
         typeof r.content === "string"
-          ? { facts: "", analysis: "", summary: r.content, oneLiner: r.content }
+          ? { facts: "", analysis: "", summary: r.content, oneLiner: r.content, aspectSignals: [] }
           : r.content,
       durationMs: 400 + Math.floor(Math.random() * 300),
     };
@@ -35,6 +35,7 @@ export function mockDailyReading(date: string): DailyReadingResponse {
     oracle: {
       summary: mockJudgeVerdict.summary,
       oneLiner: mockJudgeVerdict.oneLiner,
+      aspectCallouts: [],
       durationMs: 300,
     },
     totalDurationMs: Date.now() - start,

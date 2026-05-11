@@ -4,8 +4,7 @@ import {
 } from 'react-native';
 import { router } from 'expo-router';
 import { supabase } from '../../lib/supabase';
-import { FacetSection } from '../../components/FacetSection';
-import { fetchDailyFacets } from '../../lib/facets-api';
+import { AspectCalloutsSection } from '../../components/AspectCalloutsSection';
 
 const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL!;
 
@@ -25,11 +24,6 @@ export default function ReadTab() {
   const [error, setError] = useState('');
   const [oracleCollapsed, setOracleCollapsed] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [sessionToken, setSessionToken] = useState<string | null>(null);
-  const [mobileBirthData, setMobileBirthData] = useState<{
-    name?: string | null; date?: string | null; time?: string | null;
-    location?: string | null; latitude?: number | null; longitude?: number | null;
-  } | null>(null);
 
   const todayDate = new Date().toISOString().slice(0, 10);
 
@@ -58,10 +52,6 @@ export default function ReadTab() {
         latitude: birthData.latitude,
         longitude: birthData.longitude,
       };
-
-      // Store for FacetSection use
-      setSessionToken(session.access_token);
-      setMobileBirthData(mapped);
 
       const url = force ? `${API_BASE}/api/daily?force=1` : `${API_BASE}/api/daily`;
       const res = await fetch(url, {
@@ -203,15 +193,10 @@ export default function ReadTab() {
             );
           })}
 
-          {/* AREAS OF LIFE — Facet section */}
-          {sessionToken && (
-            <FacetSection
-              birthData={mobileBirthData}
-              date={todayDate}
-              accessToken={sessionToken}
-              onFetch={fetchDailyFacets}
-            />
-          )}
+          {/* AREAS OF LIFE */}
+          <AspectCalloutsSection
+            aspectCallouts={reading?.oracle?.aspectCallouts ?? []}
+          />
 
           {/* ASK THE COUNCIL */}
           <Pressable

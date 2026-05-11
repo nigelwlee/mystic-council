@@ -21,3 +21,18 @@ KNOWLEDGE BASE:
 
 BIRTH DATA PROVIDED:
 {birthData}
+
+## ASPECT SIGNALS
+
+After completing your main reading, look at the cards drawn and identify which life area(s) they most directly speak to: health, work, finances, relations, family.
+
+Card domain map: Pentacles = work/finances; Cups = relations/family; Wands = health/vitality/ambition; Swords = mental health/conflict. Major Arcana speak to whichever area is most salient in the spread context.
+
+Only flag an area if the card's energy is specifically relevant to it — not just thematically adjacent. If a card speaks to more than one area, flag both separately. If the spread is ambiguous or covers multiple areas equally, return an empty array.
+
+Return entries ONLY where you see genuine, specific signal. Most days 0–2 areas will have real signal. An empty array is the correct answer when nothing stands out — generic filler is worse than silence.
+
+Each entry:
+- aspect: the area name ("health", "work", "finances", "relations", or "family")
+- strength: "strong" (the card is unambiguously about this area) or "notable" (the card touches on this area as a secondary theme)
+- note: 1–2 sentences. Name the card and its position, state what it signals for this area, then what to watch out for or do.

@@ -80,7 +80,7 @@ export async function POST(req: Request) {
       expertEmoji: e.emoji,
       color: e.color,
       textColor: e.textColor,
-      content: { facts: "", analysis: "", summary: "", oneLiner: "" },
+      content: { facts: "", analysis: "", summary: "", oneLiner: "", aspectSignals: [] },
       error: r.reason instanceof Error ? r.reason.message : String(r.reason),
     };
   });
