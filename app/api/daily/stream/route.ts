@@ -26,15 +26,16 @@ const JudgeDailySchema = z.object({
   summary: z.string().describe("2-3 sentences expanding on the one-liner. Plain language."),
 });
 
-function dailyCacheKey(birthData: Record<string, unknown> | null, date: string): string {
+function dailyCacheKey(birthData: Record<string, unknown> | null, date: string, userId: string): string {
   const canonical = JSON.stringify({
+    userId,
     name: birthData?.name ?? "",
     birthdate: birthData?.date ?? "",
     time: birthData?.time ?? "",
     latitude: birthData?.latitude ?? null,
     longitude: birthData?.longitude ?? null,
   });
-  return createHash("sha256").update(canonical + "|" + date).digest("hex").slice(0, 32);
+  return "v2:" + createHash("sha256").update(canonical + "|" + date).digest("hex").slice(0, 28);
 }
 
 export async function POST(req: Request) {
@@ -44,6 +45,14 @@ export async function POST(req: Request) {
     return Response.json({ error: parsed.error.flatten() }, { status: 400 });
   }
   const { birthData, date, chart } = parsed.data;
+
+  // Best-effort user extraction for cache isolation (no hard auth gate here — NIG-159)
+  let streamUserId = "anon";
+  const authHeader = req.headers.get("Authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    const { data: { user } } = await adminClient.auth.getUser(authHeader.slice(7));
+    if (user) streamUserId = user.id;
+  }
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
@@ -56,7 +65,7 @@ export async function POST(req: Request) {
       emit({ type: "run-start", endpoint: "daily", input: parsed.data });
 
       // ── Cache check ──────────────────────────────────────────────────────────
-      const cacheKey = dailyCacheKey(birthData as Record<string, unknown> | null, date);
+      const cacheKey = dailyCacheKey(birthData as Record<string, unknown> | null, date, streamUserId);
       const { data: cached } = await adminClient
         .from("daily_reading_cache")
         .select("content")
@@ -148,9 +157,10 @@ export async function POST(req: Request) {
           };
           emit({ type: "oracle-complete", oracle });
         } catch (err) {
+          console.log(JSON.stringify({ event: "oracle_fail", endpoint: "daily/stream", err: err instanceof Error ? err.message : String(err) }));
           oracle = {
             summary: "The council was unable to synthesize a verdict.",
-            oneLiner: err instanceof Error ? err.message : String(err),
+            oneLiner: "Py fell silent — please try again.",
             durationMs: Date.now() - judgeStart,
             systemPrompt: judgeSystemPrompt,
             model: judgeConfig.model,
