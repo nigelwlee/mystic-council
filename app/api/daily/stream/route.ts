@@ -61,7 +61,7 @@ export async function POST(req: Request) {
         .from("daily_reading_cache")
         .select("content")
         .eq("cache_key", cacheKey)
-        .single();
+        .single() as { data: { content: unknown } | null };
 
       if (cached) {
         const hit = cached.content as DailyReadingResponse & { experts: Array<Record<string, unknown>>; oracle: Record<string, unknown> };
