@@ -121,6 +121,8 @@ export const OracleSchema = z.object({
   summary: z.string(),
   oneLiner: z.string(),
   aspectCallouts: z.array(AspectCalloutSchema).optional().default([]),
+  chimers: z.array(TraditionIdSchema).optional().default([]),
+  chimerCandidates: z.array(TraditionIdSchema).optional().default([]),
   durationMs: z.number().optional(),
   usage: TokenUsageSchema.optional(),
   error: z.string().optional(),

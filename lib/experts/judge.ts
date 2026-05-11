@@ -4,7 +4,7 @@ const ORACLE_FOLDER = "oracle";
 
 export const judgeConfig = {
   id: "oracle",
-  name: "The Oracle",
+  name: "Py",
   title: "Mystic Judge",
   emoji: "◈",
   color: "#a16207",

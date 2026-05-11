@@ -5,7 +5,7 @@ import { loadKnowledge, loadSystemPrompt } from "@/lib/knowledge/loader";
 import { EXPERT_ID_TO_TRADITION } from "@/lib/constants/traditions";
 import { VOICE_RULES, voiceRulesForTradition } from "@/lib/voice";
 import { FORMAT_RULES, sanitizeField } from "@/lib/format";
-import { ExpertContentSchema } from "@/lib/api/schemas";
+import { ExpertContentSchema, TraditionIdSchema } from "@/lib/api/schemas";
 import { logRun } from "@/lib/api/telemetry";
 import type { BirthData, ExpertConfig } from "@/lib/experts/types";
 import type { ExpertReading, Oracle } from "@/lib/api/schemas";
@@ -235,6 +235,7 @@ export async function runSingleExpert(
 const JudgeOutputSchema = z.object({
   summary: z.string(),
   oneLiner: z.string(),
+  chimerCandidates: z.array(TraditionIdSchema).optional().default([]),
 });
 
 export interface SynthesizeOpts {
@@ -323,6 +324,8 @@ export async function synthesize(
       summary: judgeResult.object.summary,
       oneLiner: judgeResult.object.oneLiner,
       aspectCallouts: [],
+      chimers: [],
+      chimerCandidates: judgeResult.object.chimerCandidates ?? [],
       durationMs: Date.now() - judgeStart,
       usage: judgeResult.usage
         ? {
@@ -339,8 +342,10 @@ export async function synthesize(
     logRun({ userId: opts.userId, route: opts.route ?? "council", phase: "judge", model: opts.judgeConfig.model, ok: false, error: err instanceof Error ? err.message : String(err), meta: { event: "judge_synthesis_failed", modelsAttempted: judgeModels.length } });
     return {
       summary: "The council was unable to synthesize a verdict.",
-      oneLiner: "The Oracle fell silent — please try again.",
+      oneLiner: "Py fell silent — please try again.",
       aspectCallouts: [],
+      chimers: [],
+      chimerCandidates: [],
       error: err instanceof Error ? err.message : String(err),
       durationMs: Date.now() - judgeStart,
       systemPrompt: judgeSystemPrompt,

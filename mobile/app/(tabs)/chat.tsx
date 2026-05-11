@@ -324,7 +324,7 @@ export default function ChatTab() {
     >
       {/* Header */}
       <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
-        <Text style={styles.headerTitle}>The Oracle</Text>
+        <Text style={styles.headerTitle}>Py</Text>
       </View>
 
       {/* Message list */}
@@ -378,7 +378,7 @@ export default function ChatTab() {
             style={styles.textInput}
             value={input}
             onChangeText={setInput}
-            placeholder="Ask the Oracle…"
+            placeholder="Ask Py…"
             placeholderTextColor="rgba(245,240,232,0.2)"
             multiline
             numberOfLines={4}

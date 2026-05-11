@@ -2,7 +2,8 @@ import { generateObject } from "ai";
 import { z } from "zod";
 import { createOpenAI } from "@ai-sdk/openai";
 import { experts } from "@/lib/experts/registry";
-import { judgeConfig, loadJudgePrompt } from "@/lib/experts/judge";
+import { judgeConfig, loadJudgeChatPrompt } from "@/lib/experts/judge";
+import type { TraditionId } from "@/lib/api/schemas";
 import { runSingleExpert, synthesize } from "@/lib/api/run-expert";
 import { mockExpertResponses, mockJudgeVerdict } from "@/lib/mock-data";
 import { EXPERT_ID_TO_TRADITION } from "@/lib/constants/traditions";
@@ -15,6 +16,17 @@ import { createClient } from "@/lib/supabase/server";
 import { adminClient } from "@/lib/supabase/admin";
 
 export const maxDuration = 90;
+
+function pickChimers(candidates: TraditionId[]): TraditionId[] {
+  // Candidates are ordered strongest-first by Py. Apply decreasing accept
+  // probabilities so the strongest signal almost always surfaces.
+  const probs = [0.7, 0.55, 0.4];
+  const picked: TraditionId[] = [];
+  for (let i = 0; i < candidates.length && picked.length < 2; i++) {
+    if (Math.random() < (probs[i] ?? 0.3)) picked.push(candidates[i]!);
+  }
+  return picked;
+}
 
 const openrouter = createOpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
@@ -98,7 +110,7 @@ export async function POST(req: Request) {
   const successful = expertReadings.filter((r) => !r.error);
 
   const priorFrame = dailyPriorFrame(dailyReading);
-  const judgePrompt = await loadJudgePrompt();
+  const judgePrompt = await loadJudgeChatPrompt();
   const oracle = await synthesize(expertReadings, {
     judgeConfig,
     systemPromptTemplate: judgePrompt,
@@ -107,6 +119,8 @@ export async function POST(req: Request) {
     userId: user?.id ?? undefined,
     route: "council",
   });
+
+  oracle.chimers = pickChimers((oracle.chimerCandidates ?? []) as TraditionId[]);
 
   let digest: Digest | undefined;
   if (dailyDigest && successful.length > 0) {
