@@ -29,7 +29,7 @@ export default function ReadTab() {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const scrollViewRef = useRef<ScrollView>(null);
 
-  const todayDate = new Date().toISOString().slice(0, 10);
+  const todayDate = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in device timezone
 
   async function fetchReading(force = false) {
     setLoading(true);
