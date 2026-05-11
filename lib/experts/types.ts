@@ -8,12 +8,12 @@ export interface StructuredExpertContent {
 }
 
 export interface BirthData {
-  name?: string;
+  name?: string | null;
   date?: string; // ISO date string YYYY-MM-DD
-  time?: string; // HH:mm format
+  time?: string | null; // HH:mm format; null when Supabase returns SQL NULL
   latitude?: number | null;
   longitude?: number | null;
-  location?: string; // city name for display
+  location?: string | null; // city name for display
 }
 
 export interface ExpertConfig {

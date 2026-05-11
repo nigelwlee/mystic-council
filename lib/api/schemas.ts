@@ -3,26 +3,28 @@ import { z } from "zod";
 // ─── Inputs ──────────────────────────────────────────────────────────────────
 
 export const BirthDataSchema = z.object({
-  name: z.string().optional(),
+  name: z.string().nullish(),
   date: z.string().optional(),
-  time: z.string().optional(),
+  time: z.string().nullish(),
   latitude: z.number().nullish(),
   longitude: z.number().nullish(),
-  location: z.string().optional(),
+  location: z.string().nullish(),
 });
 
 // Forward-declared loosely-typed shapes for prerequisite passthrough.
 // We avoid full reuse of ChartDataSchema / DailyReadingResponseSchema here
 // to prevent circular references (those schemas reference ContextInputSchema below).
+// id/generatedAt are optional because mobile sends chart_facts from Supabase
+// (shaped { birthDataHash, traditions }) which lacks those metadata fields.
 const ChartPassthroughSchema = z.object({
-  id: z.string(),
-  generatedAt: z.string(),
+  id: z.string().optional(),
+  generatedAt: z.string().optional(),
   traditions: z.record(z.string(), z.unknown()),
 }).passthrough();
 
 const DailyReadingPassthroughSchema = z.object({
-  id: z.string(),
-  generatedAt: z.string(),
+  id: z.string().optional(),
+  generatedAt: z.string().optional(),
   experts: z.array(z.unknown()),
   oracle: z.object({
     summary: z.string(),

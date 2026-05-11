@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { notFound } from "next/navigation";
 import { estimateCost, formatCost } from "@/lib/api/pricing";
 
@@ -613,6 +613,86 @@ function ResultPanel({
   );
 }
 
+// ─── Recent runs panel ────────────────────────────────────────────────────────
+
+interface EngineRunRow {
+  id: string;
+  created_at: string;
+  route: string;
+  phase: string;
+  expert_id?: string | null;
+  tradition_id?: string | null;
+  attempt?: number | null;
+  ok: boolean;
+  duration_ms?: number | null;
+  model?: string | null;
+  error?: string | null;
+}
+
+function RecentRunsPanel() {
+  const [runs, setRuns] = useState<EngineRunRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/engine/runs");
+      const data = await res.json() as { runs: EngineRunRow[] };
+      setRuns(data.runs ?? []);
+    } catch { /* non-fatal */ } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { if (open) void load(); }, [open]);
+
+  return (
+    <div className="border-t border-neutral-800 mt-8 pt-4">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="text-[10px] font-mono uppercase tracking-widest text-neutral-500 hover:text-neutral-300 transition-colors flex items-center gap-2"
+      >
+        <span>{open ? "▾" : "▸"}</span>
+        <span>Recent engine_runs</span>
+        {!open && <span className="text-neutral-700">(click to load)</span>}
+        {open && <button onClick={(e) => { e.stopPropagation(); void load(); }} className="ml-2 text-neutral-600 hover:text-neutral-400">[refresh]</button>}
+      </button>
+      {open && (
+        <div className="mt-3 overflow-x-auto">
+          {loading && <div className="text-neutral-600 text-[11px] font-mono">Loading…</div>}
+          {!loading && runs.length === 0 && <div className="text-neutral-600 text-[11px] font-mono">No rows yet.</div>}
+          {!loading && runs.length > 0 && (
+            <table className="w-full text-[10px] font-mono border-collapse">
+              <thead>
+                <tr className="text-neutral-600 border-b border-neutral-800">
+                  {["time", "route", "phase", "expert", "model", "ok", "ms", "error"].map((h) => (
+                    <th key={h} className="text-left py-1 pr-4 whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {runs.map((r) => (
+                  <tr key={r.id} className={`border-b border-neutral-900 ${r.ok ? "text-neutral-400" : "text-red-400"}`}>
+                    <td className="py-0.5 pr-4 whitespace-nowrap">{new Date(r.created_at).toLocaleTimeString()}</td>
+                    <td className="py-0.5 pr-4">{r.route}</td>
+                    <td className="py-0.5 pr-4">{r.phase}</td>
+                    <td className="py-0.5 pr-4">{r.expert_id ?? "—"}</td>
+                    <td className="py-0.5 pr-4 max-w-[160px] truncate">{r.model?.split("/")[1] ?? "—"}</td>
+                    <td className="py-0.5 pr-4">{r.ok ? "✓" : "✗"}</td>
+                    <td className="py-0.5 pr-4">{r.duration_ms ?? "—"}</td>
+                    <td className="py-0.5 max-w-[280px] truncate text-red-500">{r.error ?? ""}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function EngineInspector() {
@@ -755,6 +835,8 @@ export default function EngineInspector() {
         {!result && !error && !isLoading && (
           <Skeleton endpoint={endpoint} />
         )}
+
+        <RecentRunsPanel />
       </div>
     </div>
   );

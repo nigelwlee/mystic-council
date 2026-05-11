@@ -7,6 +7,9 @@ let _client: ReturnType<typeof createClient> | null = null;
 
 function getClient() {
   if (!_client) {
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SECRET_KEY) {
+      console.error("[admin] NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SECRET_KEY is missing — every admin call will fail");
+    }
     _client = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SECRET_KEY!,

@@ -20,7 +20,7 @@ export interface EngineRun {
  */
 export function logRun(r: EngineRun): void {
   console.log(JSON.stringify({ tag: "[engine-run]", ...r }));
-  void adminClient.from("engine_runs").insert({
+  adminClient.from("engine_runs").insert({
     user_id: r.userId ?? null,
     route: r.route,
     phase: r.phase,
@@ -32,5 +32,7 @@ export function logRun(r: EngineRun): void {
     model: r.model,
     error: r.error ? r.error.slice(0, 500) : null,
     meta: r.meta ?? null,
+  }).then(({ error }: { error: { message: string } | null }) => {
+    if (error) console.error("[engine-run] insert failed:", error.message, JSON.stringify({ route: r.route, expertId: r.expertId, phase: r.phase }));
   });
 }
