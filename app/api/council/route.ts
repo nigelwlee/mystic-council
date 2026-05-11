@@ -65,7 +65,7 @@ export async function POST(req: Request) {
     experts.map((e) => {
       const tid = EXPERT_ID_TO_TRADITION[e.id];
       const ctx = tid ? chartContextForTradition(chart, tid) : null;
-      return runSingleExpert(e, userMessage, birthData, ctx);
+      return runSingleExpert(e, userMessage, birthData, ctx, user?.id ?? undefined);
     })
   );
 
@@ -94,6 +94,8 @@ export async function POST(req: Request) {
     systemPromptTemplate: judgePrompt,
     userMessage: question,
     priorFrame,
+    userId: user?.id ?? undefined,
+    route: "council",
   });
 
   let digest: Digest | undefined;

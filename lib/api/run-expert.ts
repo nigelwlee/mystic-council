@@ -6,6 +6,7 @@ import { EXPERT_ID_TO_TRADITION } from "@/lib/constants/traditions";
 import { VOICE_RULES, voiceRulesForTradition } from "@/lib/voice";
 import { FORMAT_RULES, sanitizeField } from "@/lib/format";
 import { ExpertContentSchema } from "@/lib/api/schemas";
+import { logRun } from "@/lib/api/telemetry";
 import type { BirthData, ExpertConfig } from "@/lib/experts/types";
 import type { ExpertReading, Oracle } from "@/lib/api/schemas";
 import type { CoreTool } from "ai";
@@ -107,6 +108,7 @@ export async function runSingleExpert(
   userMessage: string,
   birthData: BirthData | null,
   chartContext?: string | null,
+  userId?: string | null,
 ): Promise<ExpertReading & { durationMs: number }> {
   const [knowledge, promptTemplate] = await Promise.all([
     loadKnowledge(expert.knowledgePath),
@@ -156,10 +158,12 @@ export async function runSingleExpert(
           ),
         ]);
         const parsed = parseExpertJson(result.text, expert.id);
-        console.log(JSON.stringify({ tag: "[expert]", expertId: expert.id, traditionId, model: expert.model, attempt, ok: true, durationMs: Date.now() - attemptStart }));
+        const dm = Date.now() - attemptStart;
+        logRun({ userId, route: "daily", phase: "expert", expertId: expert.id, traditionId, model: expert.model, attempt, ok: true, durationMs: dm });
         return { parsed, result };
       } catch (err) {
-        console.log(JSON.stringify({ tag: "[expert]", expertId: expert.id, traditionId, model: expert.model, attempt, ok: false, durationMs: Date.now() - attemptStart, error: err instanceof Error ? err.message : String(err) }));
+        const dm = Date.now() - attemptStart;
+        logRun({ userId, route: "daily", phase: "expert", expertId: expert.id, traditionId, model: expert.model, attempt, ok: false, durationMs: dm, error: err instanceof Error ? err.message : String(err) });
         throw err;
       }
     });
@@ -230,6 +234,8 @@ export interface SynthesizeOpts {
    * (used by the chat route to inject the prior daily reading context).
    */
   priorFrame?: string | null;
+  userId?: string | null;
+  route?: "daily" | "profile" | "council" | "chart";
 }
 
 /**
@@ -277,6 +283,7 @@ export async function synthesize(
             system: judgeSystemPrompt,
             messages: [{ role: "user", content: opts.userMessage }],
             schema: JudgeOutputSchema,
+            mode: "json",
           }),
           new Promise<never>((_, reject) =>
             setTimeout(
@@ -285,10 +292,12 @@ export async function synthesize(
             ),
           ),
         ]);
-        console.log(JSON.stringify({ tag: "[judge]", model: opts.judgeConfig.model, attempt, ok: true, durationMs: Date.now() - attemptStart }));
+        const dm = Date.now() - attemptStart;
+        logRun({ userId: opts.userId, route: opts.route ?? "council", phase: "judge", model: opts.judgeConfig.model, attempt, ok: true, durationMs: dm });
         return result;
       } catch (err) {
-        console.log(JSON.stringify({ tag: "[judge]", event: "judge_retry_attempt", model: opts.judgeConfig.model, userMessageLen: opts.userMessage.length, errorClass: err instanceof Error ? err.constructor.name : "Unknown", attempt, ok: false, durationMs: Date.now() - attemptStart, error: err instanceof Error ? err.message : String(err) }));
+        const dm = Date.now() - attemptStart;
+        logRun({ userId: opts.userId, route: opts.route ?? "council", phase: "judge", model: opts.judgeConfig.model, attempt, ok: false, durationMs: dm, error: err instanceof Error ? err.message : String(err) });
         throw err;
       }
     }, JUDGE_ATTEMPTS);
@@ -310,7 +319,7 @@ export async function synthesize(
       userMessage: opts.userMessage,
     };
   } catch (err) {
-    console.log(JSON.stringify({ event: "judge_synthesis_failed", model: opts.judgeConfig.model, userMessageLen: opts.userMessage.length, errorClass: err instanceof Error ? err.constructor.name : "Unknown", attempts: JUDGE_ATTEMPTS }));
+    logRun({ userId: opts.userId, route: opts.route ?? "council", phase: "judge", model: opts.judgeConfig.model, ok: false, error: err instanceof Error ? err.message : String(err), meta: { event: "judge_synthesis_failed", attempts: JUDGE_ATTEMPTS } });
     return {
       summary: "The council was unable to synthesize a verdict.",
       oneLiner: "The Oracle fell silent — please try again.",
