@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  View, Text, ScrollView, Pressable, ActivityIndicator, StyleSheet,
+  View, Text, ScrollView, Pressable, ActivityIndicator, StyleSheet, RefreshControl,
 } from 'react-native';
 import { router } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { AspectCalloutsSection } from '../../components/AspectCalloutsSection';
 
@@ -19,7 +20,9 @@ const TRADITIONS: Record<string, { label: string; color: string }> = {
 };
 
 export default function ReadTab() {
+  const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [reading, setReading] = useState<any>(null);
   const [error, setError] = useState('');
   const [oracleCollapsed, setOracleCollapsed] = useState(false);
@@ -86,6 +89,12 @@ export default function ReadTab() {
     }
   }
 
+  async function onRefresh() {
+    setRefreshing(true);
+    await fetchReading(true);
+    setRefreshing(false);
+  }
+
   useEffect(() => { fetchReading(); }, []);
 
   function toggleExpert(id: string) {
@@ -108,7 +117,7 @@ export default function ReadTab() {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
         <Text style={styles.dateText}>{dateLabel}</Text>
         <Pressable onPress={() => fetchReading(true)} disabled={loading}>
           <Text style={styles.refreshBtn}>Refresh</Text>
@@ -127,7 +136,17 @@ export default function ReadTab() {
       )}
 
       {reading && !loading && (
-        <ScrollView ref={scrollViewRef} contentContainerStyle={styles.scroll}>
+        <ScrollView
+          ref={scrollViewRef}
+          contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 24 }]}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="rgba(191,168,130,0.6)"
+            />
+          }
+        >
 
           {/* Oracle */}
           <View style={styles.oracleSection}>
@@ -231,7 +250,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
-    paddingTop: 60,
     paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#2D2F3E',
