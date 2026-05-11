@@ -9,6 +9,7 @@ export const westernAstrologer: ExpertConfig = {
   color: "#6366f1",
   textColor: "text-indigo-400",
   knowledgePath: "western-astrology",
-  model: "deepseek/deepseek-chat-v3-0324",
+  model: "deepseek/deepseek-chat",
+  fallbackModels: ["qwen/qwen3-235b-a22b", "moonshotai/kimi-k2"],
   tools: westernAstrologyTools,
 };

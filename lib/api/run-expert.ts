@@ -103,6 +103,22 @@ export async function runWithRetry<T>(
   throw lastErr;
 }
 
+/** Try each model in order, returning on first success or throwing the last error. */
+export async function runWithFallback<T>(
+  models: string[],
+  fn: (model: string, attempt: number) => Promise<T>,
+): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < models.length; i++) {
+    try {
+      return await fn(models[i]!, i + 1);
+    } catch (err) {
+      lastErr = err;
+    }
+  }
+  throw lastErr;
+}
+
 export async function runSingleExpert(
   expert: ExpertConfig,
   userMessage: string,
@@ -130,11 +146,12 @@ export async function runSingleExpert(
   const finalUserMessage = chartContext ? `${chartContext}${userMessage}` : userMessage;
 
   const start = Date.now();
-  // 25s per attempt × 2 attempts = 50s max, fits within /api/daily maxDuration=60
+  // 25s per attempt × up to 3 models = 75s max, fits within /api/council + /api/daily maxDuration=90
   const EXPERT_TIMEOUT_MS = 25_000;
+  const expertModels = [expert.model, ...(expert.fallbackModels ?? [])];
 
   try {
-    const content = await runWithRetry(async (attempt) => {
+    const content = await runWithFallback(expertModels, async (model, attempt) => {
       const attemptStart = Date.now();
       try {
         // When chart facts are already injected as context, skip tool calls entirely
@@ -144,7 +161,7 @@ export async function runSingleExpert(
         const maxStepsArg = chartContext ? 1 : 4;
         const result = await Promise.race([
           generateText({
-            model: openrouter(expert.model),
+            model: openrouter(model),
             system: systemPrompt,
             messages: [{ role: "user", content: finalUserMessage }],
             tools: toolsArg,
@@ -159,11 +176,11 @@ export async function runSingleExpert(
         ]);
         const parsed = parseExpertJson(result.text, expert.id);
         const dm = Date.now() - attemptStart;
-        logRun({ userId, route: "daily", phase: "expert", expertId: expert.id, traditionId, model: expert.model, attempt, ok: true, durationMs: dm });
+        logRun({ userId, route: "daily", phase: "expert", expertId: expert.id, traditionId, model, attempt, ok: true, durationMs: dm });
         return { parsed, result };
       } catch (err) {
         const dm = Date.now() - attemptStart;
-        logRun({ userId, route: "daily", phase: "expert", expertId: expert.id, traditionId, model: expert.model, attempt, ok: false, durationMs: dm, error: err instanceof Error ? err.message : String(err) });
+        logRun({ userId, route: "daily", phase: "expert", expertId: expert.id, traditionId, model, attempt, ok: false, durationMs: dm, error: err instanceof Error ? err.message : String(err) });
         throw err;
       }
     });
@@ -221,7 +238,7 @@ const JudgeOutputSchema = z.object({
 });
 
 export interface SynthesizeOpts {
-  judgeConfig: { model: string };
+  judgeConfig: { model: string; fallbackModels?: string[] };
   /** Resolved system prompt template string with {expertOutputs} placeholder. */
   systemPromptTemplate: string;
   /**
@@ -270,16 +287,16 @@ export async function synthesize(
     "\n\n" + FORMAT_RULES;
 
   const judgeStart = Date.now();
-  const JUDGE_ATTEMPTS = 2;
+  const judgeModels = [opts.judgeConfig.model, ...(opts.judgeConfig.fallbackModels ?? [])];
 
   try {
     const JUDGE_TIMEOUT_MS = 30_000;
-    const judgeResult = await runWithRetry(async (attempt) => {
+    const judgeResult = await runWithFallback(judgeModels, async (model, attempt) => {
       const attemptStart = Date.now();
       try {
         const result = await Promise.race([
           generateObject({
-            model: openrouter(opts.judgeConfig.model),
+            model: openrouter(model),
             system: judgeSystemPrompt,
             messages: [{ role: "user", content: opts.userMessage }],
             schema: JudgeOutputSchema,
@@ -293,14 +310,14 @@ export async function synthesize(
           ),
         ]);
         const dm = Date.now() - attemptStart;
-        logRun({ userId: opts.userId, route: opts.route ?? "council", phase: "judge", model: opts.judgeConfig.model, attempt, ok: true, durationMs: dm });
+        logRun({ userId: opts.userId, route: opts.route ?? "council", phase: "judge", model, attempt, ok: true, durationMs: dm });
         return result;
       } catch (err) {
         const dm = Date.now() - attemptStart;
-        logRun({ userId: opts.userId, route: opts.route ?? "council", phase: "judge", model: opts.judgeConfig.model, attempt, ok: false, durationMs: dm, error: err instanceof Error ? err.message : String(err) });
+        logRun({ userId: opts.userId, route: opts.route ?? "council", phase: "judge", model, attempt, ok: false, durationMs: dm, error: err instanceof Error ? err.message : String(err) });
         throw err;
       }
-    }, JUDGE_ATTEMPTS);
+    });
 
     return {
       summary: judgeResult.object.summary,
@@ -319,7 +336,7 @@ export async function synthesize(
       userMessage: opts.userMessage,
     };
   } catch (err) {
-    logRun({ userId: opts.userId, route: opts.route ?? "council", phase: "judge", model: opts.judgeConfig.model, ok: false, error: err instanceof Error ? err.message : String(err), meta: { event: "judge_synthesis_failed", attempts: JUDGE_ATTEMPTS } });
+    logRun({ userId: opts.userId, route: opts.route ?? "council", phase: "judge", model: opts.judgeConfig.model, ok: false, error: err instanceof Error ? err.message : String(err), meta: { event: "judge_synthesis_failed", modelsAttempted: judgeModels.length } });
     return {
       summary: "The council was unable to synthesize a verdict.",
       oneLiner: "The Oracle fell silent — please try again.",
