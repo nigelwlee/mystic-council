@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
+import { DAILY_READING_KIND } from "@/lib/api/constants";
 
 function todayStr() {
   return new Date().toLocaleDateString("en-CA");
@@ -25,7 +26,7 @@ export async function GET() {
       .from("readings")
       .select("output")
       .eq("user_id", user.id)
-      .eq("kind", "daily")
+      .eq("kind", DAILY_READING_KIND)
       .eq("reading_date", today)
       .maybeSingle(),
     supabase

@@ -3,6 +3,7 @@ import { Stack, router } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { supabase } from '../lib/supabase';
 import type { Session } from '@supabase/supabase-js';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 
 
 async function resolveRoute(s: Session | null) {
@@ -31,11 +32,13 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <Stack screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="auth" />
-        <Stack.Screen name="onboarding" />
-      </Stack>
+      <ErrorBoundary>
+        <Stack screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="auth" />
+          <Stack.Screen name="onboarding" />
+        </Stack>
+      </ErrorBoundary>
     </GestureHandlerRootView>
   );
 }
