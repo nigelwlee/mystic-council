@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   View, Text, Pressable, ScrollView, StyleSheet,
 } from 'react-native';
@@ -8,6 +8,7 @@ import type { AspectKey, AspectCallout } from '../lib/daily-api';
 
 interface AspectCalloutsSectionProps {
   aspectCallouts: AspectCallout[];
+  scrollViewRef: React.RefObject<ScrollView | null>;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -83,25 +84,33 @@ function EmptyTabContent() {
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export function AspectCalloutsSection({ aspectCallouts }: AspectCalloutsSectionProps) {
-  const [activeAspect, setActiveAspect] = useState<AspectKey>('health');
+export function AspectCalloutsSection({ aspectCallouts, scrollViewRef }: AspectCalloutsSectionProps) {
   const [revealed, setRevealed] = useState(false);
+
+  const containerOffsetRef = useRef(0);
+  const sectionOffsetsRef = useRef<Record<string, number>>({});
 
   const calloutMap = new Map<AspectKey, AspectCallout>();
   for (const c of aspectCallouts) {
     calloutMap.set(c.aspect, c);
   }
 
-  const activeCallout = calloutMap.get(activeAspect);
+  function scrollToAspect(key: AspectKey) {
+    const y = containerOffsetRef.current + (sectionOffsetsRef.current[key] ?? 0);
+    scrollViewRef.current?.scrollTo({ y, animated: true });
+  }
 
   return (
-    <View style={s.container}>
+    <View
+      style={s.container}
+      onLayout={(e) => { containerOffsetRef.current = e.nativeEvent.layout.y; }}
+    >
       {/* Section header */}
       <View style={s.sectionHeader}>
         <Text style={s.sectionTitle}>AREAS OF LIFE</Text>
       </View>
 
-      {/* Aspect tab strip */}
+      {/* Aspect tab strip — tapping scrolls to that section */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -109,9 +118,9 @@ export function AspectCalloutsSection({ aspectCallouts }: AspectCalloutsSectionP
         contentContainerStyle={s.tabStripContent}
       >
         {ASPECT_KEYS.map((k) => (
-          <Pressable key={k} onPress={() => setActiveAspect(k)}>
-            <View style={[s.tab, activeAspect === k && s.tabActive]}>
-              <Text style={[s.tabText, activeAspect === k && s.tabTextActive]}>
+          <Pressable key={k} onPress={() => scrollToAspect(k)}>
+            <View style={s.tab}>
+              <Text style={s.tabText}>
                 {ASPECT_LABELS[k]}
               </Text>
             </View>
@@ -119,19 +128,33 @@ export function AspectCalloutsSection({ aspectCallouts }: AspectCalloutsSectionP
         ))}
       </ScrollView>
 
-      {/* Tab body */}
-      <View style={s.tabBody}>
-        {!revealed && <LockedTabContent />}
-        {revealed && activeCallout && <CalloutTabContent callout={activeCallout} />}
-        {revealed && !activeCallout && <EmptyTabContent />}
-      </View>
-
-      {/* CTA — only shown when not yet revealed */}
+      {/* Locked placeholder + CTA */}
       {!revealed && (
-        <Pressable style={s.revealButton} onPress={() => setRevealed(true)}>
-          <Text style={s.revealButtonText}>REVEAL DETAILED READINGS</Text>
-        </Pressable>
+        <>
+          <View style={s.tabBody}>
+            <LockedTabContent />
+          </View>
+          <Pressable style={s.revealButton} onPress={() => setRevealed(true)}>
+            <Text style={s.revealButtonText}>REVEAL DETAILED READINGS</Text>
+          </Pressable>
+        </>
       )}
+
+      {/* Stacked sections — visible after reveal */}
+      {revealed && ASPECT_KEYS.map((k) => {
+        const callout = calloutMap.get(k);
+        return (
+          <View
+            key={k}
+            onLayout={(e) => { sectionOffsetsRef.current[k] = e.nativeEvent.layout.y; }}
+          >
+            <View style={s.aspectHeader}>
+              <Text style={s.aspectLabel}>{ASPECT_LABELS[k]}</Text>
+            </View>
+            {callout ? <CalloutTabContent callout={callout} /> : <EmptyTabContent />}
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -170,22 +193,31 @@ const s = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#2D2F3E',
   },
-  tabActive: {
-    borderColor: 'rgba(191,168,130,0.7)',
-  },
   tabText: {
     color: '#6B7280',
     fontSize: 10,
     letterSpacing: 1.5,
   },
-  tabTextActive: {
-    color: 'rgba(191,168,130,1)',
-  },
 
-  // Tab body
+  // Tab body (locked state only)
   tabBody: {
     marginTop: 16,
-    minHeight: 200,
+  },
+
+  // Aspect section header
+  aspectHeader: {
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    paddingBottom: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#1E2030',
+    marginTop: 8,
+  },
+  aspectLabel: {
+    color: 'rgba(191,168,130,0.8)',
+    fontSize: 10,
+    letterSpacing: 2,
+    fontWeight: '600',
   },
 
   // Key action block
