@@ -104,7 +104,7 @@ export async function POST(req: Request) {
         e.id === "madame-crow"
           ? { ...e, tools: makeSeededTarotTools(date) }
           : e;
-      return runSingleExpert(expertWithSeed, dailyMessage, birthData, ctx);
+      return runSingleExpert(expertWithSeed, dailyMessage, birthData, ctx, user?.id);
     })
   );
 

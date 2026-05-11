@@ -6,6 +6,7 @@ import { EXPERT_ID_TO_TRADITION } from "@/lib/constants/traditions";
 import { voiceRulesForTradition } from "@/lib/voice";
 import { FORMAT_RULES } from "@/lib/format";
 import { formatBirthData, runWithRetry } from "@/lib/api/run-expert";
+import { logRun } from "@/lib/api/telemetry";
 import type { BirthData, ExpertConfig } from "@/lib/experts/types";
 
 const openrouter = createOpenAI({
@@ -28,6 +29,7 @@ export async function runProfileExpert(
   expert: ExpertConfig,
   birthData: BirthData | null,
   chartContext?: string | null,
+  userId?: string | null,
 ): Promise<ProfileExpertResult> {
   const traditionId = EXPERT_ID_TO_TRADITION[expert.id];
   if (!traditionId) {
@@ -65,15 +67,18 @@ export async function runProfileExpert(
             system: systemPrompt,
             messages: [{ role: "user", content: userMessage }],
             schema: ProfileSchema,
+            mode: "json",
           }),
           new Promise<never>((_, reject) =>
             setTimeout(() => reject(new Error(`Expert ${expert.id} timed out`)), TIMEOUT_MS),
           ),
         ]);
-        console.log(JSON.stringify({ tag: "[profile-expert]", expertId: expert.id, traditionId, model: expert.model, attempt, ok: true, durationMs: Date.now() - attemptStart }));
+        const dm = Date.now() - attemptStart;
+        logRun({ userId, route: "profile", phase: "expert", expertId: expert.id, traditionId, model: expert.model, attempt, ok: true, durationMs: dm });
         return result.object.atGlance;
       } catch (err) {
-        console.log(JSON.stringify({ tag: "[profile-expert]", expertId: expert.id, traditionId, model: expert.model, attempt, ok: false, durationMs: Date.now() - attemptStart, error: err instanceof Error ? err.message : String(err) }));
+        const dm = Date.now() - attemptStart;
+        logRun({ userId, route: "profile", phase: "expert", expertId: expert.id, traditionId, model: expert.model, attempt, ok: false, durationMs: dm, error: err instanceof Error ? err.message : String(err) });
         throw err;
       }
     });

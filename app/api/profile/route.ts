@@ -171,20 +171,50 @@ export async function POST(req: Request) {
     return tid && (missingTraditions as string[]).includes(tid);
   });
 
+  // Cooloff: skip traditions that have failed ≥3 times in the last 10 min
+  // to avoid hammering a broken model on every page visit.
+  const { data: recentFailRows } = await adminClient
+    .from("engine_runs")
+    .select("tradition_id")
+    .eq("user_id", user.id)
+    .eq("route", "profile")
+    .eq("ok", false)
+    .gte("created_at", new Date(Date.now() - 10 * 60 * 1000).toISOString());
+
+  const recentFailCounts: Record<string, number> = {};
+  for (const row of (recentFailRows ?? []) as Array<{ tradition_id: string }>) {
+    recentFailCounts[row.tradition_id] = (recentFailCounts[row.tradition_id] ?? 0) + 1;
+  }
+  const cooledOffTraditions = new Set(
+    Object.entries(recentFailCounts)
+      .filter(([, count]) => count >= 3)
+      .map(([tid]) => tid)
+  );
+
+  const retryableExperts = missingExperts.filter((e) => {
+    const tid = EXPERT_ID_TO_TRADITION[e.id]!;
+    return !cooledOffTraditions.has(tid);
+  });
+
   const settled = await Promise.allSettled(
-    missingExperts.map((e) => {
+    retryableExperts.map((e) => {
       const tid = EXPERT_ID_TO_TRADITION[e.id]!;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const ctx = chartContextForTradition(chart as any, tid);
-      return runProfileExpert(e, birthData, ctx);
+      return runProfileExpert(e, birthData, ctx, user.id);
     })
   );
 
   // ── Per-tradition upsert — failures don't poison cached successes ───────────
+  // Seed cooled-off traditions as failed immediately (no retry attempted)
   const newTraditions: Record<string, { atGlance: string; status: "ready" | "failed" }> = {};
+  for (const tid of cooledOffTraditions) {
+    newTraditions[tid] = { atGlance: "", status: "failed" };
+  }
+
   await Promise.allSettled(
     settled.map(async (r, i) => {
-      const expert = missingExperts[i]!;
+      const expert = retryableExperts[i]!;
       const tid = EXPERT_ID_TO_TRADITION[expert.id]!;
       if (r.status === "fulfilled" && !r.value.error && r.value.atGlance) {
         newTraditions[tid] = { atGlance: r.value.atGlance, status: "ready" };

@@ -320,6 +320,7 @@ export default function MeTab() {
                   data={chart.traditions.western ?? null}
                   atGlance={profileReading?.traditions.western?.atGlance}
                   profileStatus={profileReading?.traditions.western?.status ?? (profileGenerating ? 'loading' : undefined)}
+                  fallbackSummary={chart.traditions.western ? westernHeadline(chart.traditions.western) : null}
                 />
                 <ChartRow
                   emoji="🔱"
@@ -328,6 +329,7 @@ export default function MeTab() {
                   data={chart.traditions.vedic ?? null}
                   atGlance={profileReading?.traditions.vedic?.atGlance}
                   profileStatus={profileReading?.traditions.vedic?.status ?? (profileGenerating ? 'loading' : undefined)}
+                  fallbackSummary={chart.traditions.vedic ? vedicHeadline(chart.traditions.vedic) : null}
                 />
                 <ChartRow
                   emoji="🐉"
@@ -336,6 +338,7 @@ export default function MeTab() {
                   data={chart.traditions.chinese ?? null}
                   atGlance={profileReading?.traditions.chinese?.atGlance}
                   profileStatus={profileReading?.traditions.chinese?.status ?? (profileGenerating ? 'loading' : undefined)}
+                  fallbackSummary={chart.traditions.chinese ? chineseHeadline(chart.traditions.chinese) : null}
                 />
                 <ChartRow
                   emoji="🔢"
@@ -344,6 +347,7 @@ export default function MeTab() {
                   data={chart.traditions.numerology ?? null}
                   atGlance={profileReading?.traditions.numerology?.atGlance}
                   profileStatus={profileReading?.traditions.numerology?.status ?? (profileGenerating ? 'loading' : undefined)}
+                  fallbackSummary={chart.traditions.numerology ? numerologyHeadline(chart.traditions.numerology) : null}
                 />
                 {tarotCards && (
                   <ChartRow
@@ -435,7 +439,7 @@ function KVList({ data, depth = 0 }: { data: Record<string, unknown>; depth?: nu
 }
 
 function ChartRow({
-  emoji, label, headline, data, atGlance, profileStatus,
+  emoji, label, headline, data, atGlance, profileStatus, fallbackSummary,
 }: {
   emoji: string;
   label: string;
@@ -443,6 +447,7 @@ function ChartRow({
   data: Record<string, unknown> | null;
   atGlance?: string | null;
   profileStatus?: 'ready' | 'failed' | 'loading';
+  fallbackSummary?: string | null;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -456,6 +461,14 @@ function ChartRow({
       return <Text style={styles.atGlancePending}>Generating your reading…</Text>;
     }
     if (profileStatus === 'failed') {
+      if (fallbackSummary) {
+        return (
+          <View>
+            <Text style={styles.atGlance}>{fallbackSummary}</Text>
+            <Text style={[styles.atGlancePending, { marginTop: 6 }]}>Full reading will generate on next visit.</Text>
+          </View>
+        );
+      }
       return <Text style={styles.atGlancePending}>Couldn't reach this expert. Pull down to retry.</Text>;
     }
     if (atGlance) {

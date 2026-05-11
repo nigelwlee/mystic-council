@@ -88,6 +88,54 @@ export type Database = {
         }
         Relationships: []
       }
+      engine_runs: {
+        Row: {
+          id: string
+          created_at: string
+          user_id: string | null
+          route: string
+          phase: string
+          expert_id: string | null
+          tradition_id: string | null
+          attempt: number | null
+          ok: boolean
+          duration_ms: number | null
+          model: string | null
+          error: string | null
+          meta: Json | null
+        }
+        Insert: {
+          id?: string
+          created_at?: string
+          user_id?: string | null
+          route: string
+          phase: string
+          expert_id?: string | null
+          tradition_id?: string | null
+          attempt?: number | null
+          ok: boolean
+          duration_ms?: number | null
+          model?: string | null
+          error?: string | null
+          meta?: Json | null
+        }
+        Update: {
+          id?: string
+          created_at?: string
+          user_id?: string | null
+          route?: string
+          phase?: string
+          expert_id?: string | null
+          tradition_id?: string | null
+          attempt?: number | null
+          ok?: boolean
+          duration_ms?: number | null
+          model?: string | null
+          error?: string | null
+          meta?: Json | null
+        }
+        Relationships: []
+      }
       daily_reading_cache: {
         Row: {
           cache_key: string
