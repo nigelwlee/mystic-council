@@ -13,7 +13,7 @@ import { IS_MOCK_MODE, mockDelay } from "@/lib/mock";
 import { bumpStreak } from "@/lib/api/streak";
 import { createClient } from "@/lib/supabase/server";
 
-export const maxDuration = 60;
+export const maxDuration = 90;
 
 const openrouter = createOpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,

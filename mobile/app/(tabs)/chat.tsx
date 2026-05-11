@@ -257,6 +257,7 @@ export default function ChatTab() {
           },
           date: todayISO,
           accessToken,
+          chart: birthData.chart_facts ?? undefined,
         });
 
         const oracleError = result.oracle.error;

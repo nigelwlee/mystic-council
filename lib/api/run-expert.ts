@@ -262,15 +262,24 @@ export async function synthesize(
   const JUDGE_ATTEMPTS = 3;
 
   try {
+    const JUDGE_TIMEOUT_MS = 30_000;
     const judgeResult = await runWithRetry(async (attempt) => {
       const attemptStart = Date.now();
       try {
-        const result = await generateObject({
-          model: openrouter(opts.judgeConfig.model),
-          system: judgeSystemPrompt,
-          messages: [{ role: "user", content: opts.userMessage }],
-          schema: JudgeOutputSchema,
-        });
+        const result = await Promise.race([
+          generateObject({
+            model: openrouter(opts.judgeConfig.model),
+            system: judgeSystemPrompt,
+            messages: [{ role: "user", content: opts.userMessage }],
+            schema: JudgeOutputSchema,
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () => reject(new Error(`Judge timed out after ${JUDGE_TIMEOUT_MS}ms`)),
+              JUDGE_TIMEOUT_MS,
+            ),
+          ),
+        ]);
         console.log(JSON.stringify({ tag: "[judge]", model: opts.judgeConfig.model, attempt, ok: true, durationMs: Date.now() - attemptStart }));
         return result;
       } catch (err) {
