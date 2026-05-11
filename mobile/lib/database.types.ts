@@ -19,6 +19,7 @@ export type Database = {
           birthdate: string
           birthplace: string
           birthtime: string | null
+          chart_facts: Json | null
           latitude: number | null
           longitude: number | null
           name: string
@@ -30,6 +31,7 @@ export type Database = {
           birthdate: string
           birthplace: string
           birthtime?: string | null
+          chart_facts?: Json | null
           latitude?: number | null
           longitude?: number | null
           name: string
@@ -41,6 +43,7 @@ export type Database = {
           birthdate?: string
           birthplace?: string
           birthtime?: string | null
+          chart_facts?: Json | null
           latitude?: number | null
           longitude?: number | null
           name?: string
@@ -137,6 +140,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      profile_summaries: {
+        Row: {
+          at_glance: string
+          birth_data_hash: string
+          generated_at: string
+          tradition_id: string
+          user_id: string
+        }
+        Insert: {
+          at_glance: string
+          birth_data_hash: string
+          generated_at?: string
+          tradition_id: string
+          user_id: string
+        }
+        Update: {
+          at_glance?: string
+          birth_data_hash?: string
+          generated_at?: string
+          tradition_id?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       profiles: {
         Row: {
