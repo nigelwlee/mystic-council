@@ -25,7 +25,7 @@ const ENDPOINTS: { id: EndpointId; label: string; desc: string }[] = [
   { id: "chart", label: "Chart", desc: "No-LLM raw tool outputs only" },
   { id: "daily", label: "Daily", desc: "Today's daily reading" },
   { id: "daily/facets", label: "Facets", desc: "5 life areas — health/work/finances/relations/family" },
-  { id: "council", label: "Council", desc: "Full Q&A — all 5 experts + Oracle" },
+  { id: "council", label: "Council", desc: "Full Q&A — all 5 experts + Py" },
   { id: "expert/western", label: "Western", desc: "Stella · birth chart + transits" },
   { id: "expert/chinese", label: "Chinese", desc: "Master Wei · Ba Zi + lunar" },
   { id: "expert/vedic", label: "Vedic", desc: "Priya · sidereal + dasha" },
@@ -169,7 +169,7 @@ function OracleCard({ oracle }: { oracle: Record<string, unknown> }) {
     <div className="border border-neutral-700 bg-neutral-900/50 overflow-hidden">
       <div className="px-3 py-2 border-b border-neutral-800 flex items-center gap-2">
         <span>◈</span>
-        <span className="text-xs font-mono text-neutral-400">The Oracle</span>
+        <span className="text-xs font-mono text-neutral-400">Py</span>
         <div className="ml-auto flex items-center gap-3 text-[10px] text-neutral-600">
           {oracle.durationMs != null && <span>{oracle.durationMs as number}ms</span>}
           {usage && <span>{formatTokens(usage.totalTokens)}tok</span>}

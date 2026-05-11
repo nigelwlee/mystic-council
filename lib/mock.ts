@@ -36,6 +36,8 @@ export function mockDailyReading(date: string): DailyReadingResponse {
       summary: mockJudgeVerdict.summary,
       oneLiner: mockJudgeVerdict.oneLiner,
       aspectCallouts: [],
+      chimers: [],
+      chimerCandidates: [],
       durationMs: 300,
     },
     totalDurationMs: Date.now() - start,

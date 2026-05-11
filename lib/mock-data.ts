@@ -82,4 +82,6 @@ export const mockJudgeVerdict: Oracle = {
   summary: "The council speaks with unusual coherence. Every tradition — the Eight of Pentacles, Saturn in the 10th, the Water Dog building steadily, Life Path 7 — describes the same person doing careful, patient work that compounds over time. The Tower reversed and Sun-Pluto conjunction both point to a necessary clearing that created space for what's now being built. An opening is coming: the Ace of Cups, Jupiter Mahadasha, the 5 year making way for the 6 — and it will require you to be both skilled enough to receive it and open enough not to deflect it.",
   oneLiner: "You are in a builder's season — do the work, prepare the cup, and the opening will find you ready.",
   aspectCallouts: [],
+  chimers: [],
+  chimerCandidates: [],
 };

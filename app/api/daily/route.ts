@@ -171,6 +171,8 @@ export async function POST(req: Request) {
       summary: judgeResult.object.summary,
       oneLiner: judgeResult.object.oneLiner,
       aspectCallouts: judgeResult.object.aspectCallouts ?? [],
+      chimers: [],
+      chimerCandidates: [],
       durationMs: Date.now() - judgeStart,
       usage: judgeResult.usage
         ? {
@@ -188,6 +190,8 @@ export async function POST(req: Request) {
       summary: "The oracle was unable to synthesize today's reading.",
       oneLiner: err instanceof Error ? err.message : String(err),
       aspectCallouts: [],
+      chimers: [],
+      chimerCandidates: [],
       durationMs: Date.now() - judgeStart,
       systemPrompt: judgeSystemPrompt,
       model: judgeConfig.model,
