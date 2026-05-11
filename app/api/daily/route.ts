@@ -2,7 +2,7 @@ import { generateObject } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { experts } from "@/lib/experts/registry";
 import { judgeConfig, loadJudgePrompt } from "@/lib/experts/judge";
-import { runSingleExpert } from "@/lib/api/run-expert";
+import { runSingleExpert, runWithRetry } from "@/lib/api/run-expert";
 import { EXPERT_ID_TO_TRADITION } from "@/lib/constants/traditions";
 import { ContextInputSchema, JudgeDailySchema } from "@/lib/api/schemas";
 import { chartContextForTradition } from "@/lib/api/chart-context";
@@ -138,12 +138,20 @@ export async function POST(req: Request) {
   const judgeUserMessage = `Synthesize a daily reading for ${date} in 2-3 sentences.`;
   let oracle: DailyReadingResponse["oracle"];
   try {
-    const judgeResult = await generateObject({
-      model: openrouter(judgeConfig.model),
-      system: judgeSystemPrompt,
-      messages: [{ role: "user", content: judgeUserMessage }],
-      schema: JudgeDailySchema,
-    });
+    const judgeResult = await runWithRetry(async () => {
+      return Promise.race([
+        generateObject({
+          model: openrouter(judgeConfig.model),
+          system: judgeSystemPrompt,
+          messages: [{ role: "user", content: judgeUserMessage }],
+          schema: JudgeDailySchema,
+          mode: "json",
+        }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Judge timed out after 30s")), 30_000),
+        ),
+      ]);
+    }, 3);
     oracle = {
       summary: judgeResult.object.summary,
       oneLiner: judgeResult.object.oneLiner,
