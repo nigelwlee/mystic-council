@@ -94,9 +94,11 @@ export default function MeTab() {
         .catch(() => setChartError(true))
         .finally(() => setChartLoading(false));
       setProfileError(false);
+      setProfileGenerating(true);
       fetchProfile({ birthData: bd, accessToken: session.access_token })
         .then((p) => setProfileReading(p))
-        .catch(() => setProfileError(true));
+        .catch(() => setProfileError(true))
+        .finally(() => setProfileGenerating(false));
     }
   }, []);
 

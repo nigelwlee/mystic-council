@@ -13,13 +13,6 @@ const openrouter = createOpenAI({
   baseURL: "https://openrouter.ai/api/v1",
 });
 
-const PROFILE_OUTPUT_RULES = `
-
-OUTPUT FORMAT — STRICT JSON ONLY.
-{
-  "atGlance": "Write a single 4–6 sentence paragraph spoken directly to this person. Cover who they are (personality), their life direction (path), how they connect with others (relationships), and where they thrive (work). Be warm, specific, and grounded in the placements — cite them when they sharpen a point. No bullets, no headings, no lists."
-}`;
-
 const ProfileSchema = z.object({
   atGlance: z.string(),
 });
@@ -43,7 +36,7 @@ export async function runProfileExpert(
 
   const [knowledge, promptTemplate] = await Promise.all([
     loadKnowledge(expert.knowledgePath),
-    loadSystemPrompt(expert.knowledgePath),
+    loadSystemPrompt(expert.knowledgePath, "profile"),
   ]);
 
   const birthDataStr = formatBirthData(birthData);
@@ -53,8 +46,7 @@ export async function runProfileExpert(
       .replace("{knowledge}", knowledge)
       .replace("{birthData}", birthDataStr) +
     "\n\n" + voiceRulesForTradition(traditionId) +
-    "\n\n" + FORMAT_RULES +
-    PROFILE_OUTPUT_RULES;
+    "\n\n" + FORMAT_RULES;
 
   const userMessage = chartContext
     ? `${chartContext}Based on this person's birth chart and the facts above, write their "at a glance" profile reading.`
