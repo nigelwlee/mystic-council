@@ -210,19 +210,6 @@ export function useProtoStore() {
   const saveCache = useCallback(
     (date: string, data: ProtoDailyCache) => {
       setStore((s) => ({ ...s, cache: { ...s.cache, [date]: data } }));
-
-      // Write via server route — avoids browser client auth issues
-      const storeRaw = localStorage.getItem(STORE_KEY);
-      let birthData: ProtoBirthData | null = null;
-      try {
-        if (storeRaw) birthData = (JSON.parse(storeRaw) as Partial<ProtoStore>).birthData ?? null;
-      } catch { /* ignore */ }
-
-      fetch("/api/user/daily-reading", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ date, input: { birthData, date }, output: data }),
-      }).catch((err) => console.error("[ProtoStore] daily-reading write error:", err));
     },
     [setStore],
   );
