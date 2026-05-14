@@ -66,7 +66,9 @@ export type Database = {
           chat_date: string
           content: string
           created_at: string
+          experts: Json | null
           id: string
+          oracle: Json | null
           role: string
           user_id: string
         }
@@ -74,7 +76,9 @@ export type Database = {
           chat_date: string
           content: string
           created_at?: string
+          experts?: Json | null
           id?: string
+          oracle?: Json | null
           role: string
           user_id: string
         }
@@ -82,7 +86,9 @@ export type Database = {
           chat_date?: string
           content?: string
           created_at?: string
+          experts?: Json | null
           id?: string
+          oracle?: Json | null
           role?: string
           user_id?: string
         }

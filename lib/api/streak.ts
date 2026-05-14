@@ -1,9 +1,14 @@
 import { adminClient } from "@/lib/supabase/admin";
 
+function yesterdayOf(date: string): string {
+  // Parse as UTC components to avoid server-TZ drift
+  const [y, m, d] = date.split("-").map(Number);
+  const prev = new Date(Date.UTC(y!, m! - 1, d! - 1));
+  return prev.toISOString().slice(0, 10);
+}
+
 export async function bumpStreak(userId: string, date: string): Promise<void> {
-  const d = new Date(date);
-  d.setDate(d.getDate() - 1);
-  const yesterday = d.toLocaleDateString("en-CA");
+  const yesterday = yesterdayOf(date);
 
   const { data: existing } = await adminClient
     .from("daily_streaks")

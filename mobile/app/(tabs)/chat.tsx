@@ -181,7 +181,6 @@ export default function ChatTab() {
   const [pending, setPending] = useState(false);
   const [birthData, setBirthData] = useState<BirthDataRow | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
   const [prompts, setPrompts] = useState<string[]>(() => pickThree());
   const [loading, setLoading] = useState(true);
 
@@ -195,7 +194,6 @@ export default function ChatTab() {
         return;
       }
       setUserId(session.user.id);
-      setAccessToken(session.access_token);
 
       const [{ data: bd }, { data: history }] = await Promise.all([
         supabase
@@ -205,7 +203,7 @@ export default function ChatTab() {
           .maybeSingle(),
         supabase
           .from('chat_messages')
-          .select('role, content, created_at')
+          .select('role, content, created_at, oracle, experts')
           .eq('user_id', session.user.id)
           .eq('chat_date', todayISO)
           .order('created_at'),
@@ -218,6 +216,8 @@ export default function ChatTab() {
             role: row.role as 'user' | 'assistant',
             content: row.content,
             createdAt: row.created_at,
+            ...(row.role === 'assistant' && row.oracle ? { oracle: row.oracle as ChatOracle } : {}),
+            ...(row.role === 'assistant' && row.experts ? { experts: row.experts as ChatExpertReading[] } : {}),
           }))
         );
       }
@@ -230,7 +230,10 @@ export default function ChatTab() {
   const send = useCallback(
     async (text: string) => {
       const q = text.trim();
-      if (!q || pending || !birthData || !accessToken || !userId) return;
+      if (!q || pending || !birthData || !userId) return;
+      const { data: { session: freshSession } } = await supabase.auth.getSession();
+      if (!freshSession) return;
+      const accessToken = freshSession.access_token;
 
       setInput('');
       const createdAt = new Date().toISOString();
@@ -273,11 +276,14 @@ export default function ChatTab() {
         };
         setMessages((prev) => [...prev, assistantMsg]);
 
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await supabase.from('chat_messages').insert({
           user_id: userId,
           role: 'assistant',
           content,
           chat_date: todayISO,
+          oracle: result.oracle as any,
+          experts: result.experts as any,
         });
       } catch (e) {
         setMessages((prev) => [

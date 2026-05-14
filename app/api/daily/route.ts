@@ -186,9 +186,10 @@ export async function POST(req: Request) {
       userMessage: judgeUserMessage,
     };
   } catch (err) {
+    console.log(JSON.stringify({ event: "oracle_fail", endpoint: "daily", err: err instanceof Error ? err.message : String(err) }));
     oracle = {
       summary: "The oracle was unable to synthesize today's reading.",
-      oneLiner: err instanceof Error ? err.message : String(err),
+      oneLiner: "Py fell silent — please try again.",
       aspectCallouts: [],
       chimers: [],
       chimerCandidates: [],
