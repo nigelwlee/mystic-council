@@ -11,6 +11,7 @@ import { VOICE_RULES } from "@/lib/voice";
 import { FORMAT_RULES } from "@/lib/format";
 import { makeSeededRng, makeDrawCardsTool } from "@/lib/tools/tarot";
 import { getPostHogClient } from "@/lib/posthog-server";
+import { getUserFromRequest } from "@/lib/api/auth";
 
 // Daily tarot: seeded by date+question so the daily reading is stable.
 // Council (chat): seeded by date+question+userId so each user gets unique cards
@@ -37,6 +38,12 @@ const JudgeChatSchema = z.object({
 });
 
 export async function POST(req: Request) {
+  // Hard auth gate — unauthenticated requests return 401
+  const authResult = await getUserFromRequest(req);
+  if (!authResult) {
+    return new Response(null, { status: 401 });
+  }
+
   const body = await req.json();
   const parsed = QuestionInputSchema.safeParse(body);
   if (!parsed.success) {
@@ -170,9 +177,8 @@ export async function POST(req: Request) {
       }
 
       const posthog = getPostHogClient();
-      const distinctId = userId ?? parsed.data.birthData?.name ?? "anonymous";
       posthog.capture({
-        distinctId,
+        distinctId: authResult.user.id,
         event: "council_request_completed",
         properties: {
           expertCount: expertReadings.length,

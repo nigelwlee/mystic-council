@@ -7,8 +7,8 @@ import { westernAstrologyTools } from "@/lib/tools/astrology";
 import { chineseAstrologyTools } from "@/lib/tools/chinese";
 import { vedicAstrologyTools } from "@/lib/tools/vedic";
 import { numerologyTools } from "@/lib/tools/numerology";
-import { createClient } from "@/lib/supabase/server";
 import { adminClient } from "@/lib/supabase/admin";
+import { getUserFromRequest } from "@/lib/api/auth";
 
 export const maxDuration = 120;
 
@@ -91,20 +91,11 @@ export async function POST(req: Request) {
   const force = new URL(req.url).searchParams.get("force") === "1";
 
   // Prefer Bearer token (mobile); fall back to cookie session (web)
-  const authHeader = req.headers.get("Authorization");
-  let user: { id: string } | null = null;
-  if (authHeader?.startsWith("Bearer ")) {
-    const token = authHeader.slice(7);
-    const { data: { user: u } } = await adminClient.auth.getUser(token);
-    user = u;
-  } else {
-    const supabase = await createClient();
-    const { data: { user: u } } = await supabase.auth.getUser();
-    user = u;
-  }
-  if (!user) {
+  const authResult = await getUserFromRequest(req);
+  if (!authResult) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
+  const user = authResult.user;
 
   if (!birthData?.date) {
     return Response.json({ error: "Birth date required" }, { status: 400 });

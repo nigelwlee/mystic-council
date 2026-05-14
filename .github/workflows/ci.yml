@@ -55,6 +55,13 @@ jobs:
               "https://api.vercel.com/v6/deployments?projectId=$VERCEL_PROJECT_ID&meta-githubCommitSha=$GITHUB_SHA&limit=1")
             state=$(echo "$resp" | jq -r '.deployments[0].state // "MISSING"')
             url=$(echo  "$resp" | jq -r '.deployments[0].url   // ""')
+            # If SHA lookup missed, try branch name
+            if [ "$state" = "MISSING" ]; then
+              resp2=$(curl -fsS -H "Authorization: Bearer $VERCEL_TOKEN" \
+                "https://api.vercel.com/v6/deployments?projectId=$VERCEL_PROJECT_ID&meta-githubCommitRef=$GITHUB_HEAD_REF&limit=1")
+              state=$(echo "$resp2" | jq -r '.deployments[0].state // "MISSING"')
+              url=$(echo  "$resp2" | jq -r '.deployments[0].url   // ""')
+            fi
             echo "attempt=$i state=$state url=$url"
             case "$state" in
               READY)          echo "url=https://$url" >> "$GITHUB_OUTPUT"; exit 0 ;;
