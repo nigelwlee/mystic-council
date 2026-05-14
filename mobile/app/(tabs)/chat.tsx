@@ -174,7 +174,7 @@ function EmptyStateText() {
 
 export default function ChatTab() {
   const insets = useSafeAreaInsets();
-  const todayISO = useRef(new Date().toISOString().slice(0, 10)).current;
+  const todayISO = useRef(new Date().toLocaleDateString("en-CA")).current; // YYYY-MM-DD in device timezone
 
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');

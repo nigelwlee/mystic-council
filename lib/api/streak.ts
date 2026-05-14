@@ -12,13 +12,18 @@ export async function bumpStreak(userId: string, date: string): Promise<void> {
     .maybeSingle();
 
   // Already counted today — idempotent
-  if (existing?.last_completed_date === date) return;
+  if (existing?.last_completed_date === date) {
+    console.log(JSON.stringify({ event: "streak_bump", result: "idempotent", userId, date, last: existing.last_completed_date }));
+    return;
+  }
 
   const current =
     existing?.last_completed_date === yesterday
       ? (existing.current_streak ?? 0) + 1
       : 1;
   const longest = Math.max(existing?.longest_streak ?? 0, current);
+  const action = existing?.last_completed_date === yesterday ? "increment" : "reset";
+  console.log(JSON.stringify({ event: "streak_bump", result: action, userId, date, last: existing?.last_completed_date ?? null, current, longest }));
 
   const { error } = await adminClient.from("daily_streaks").upsert(
     {

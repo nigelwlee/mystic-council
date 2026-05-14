@@ -89,7 +89,7 @@ export default function MeTab() {
       };
       setChartLoading(true);
       setChartError(false);
-      fetchChart({ birthData: bd, date: new Date().toISOString().slice(0, 10), accessToken: session.access_token })
+      fetchChart({ birthData: bd, date: new Date().toLocaleDateString("en-CA"), accessToken: session.access_token })
         .then((c) => setChart(c))
         .catch(() => setChartError(true))
         .finally(() => setChartLoading(false));
