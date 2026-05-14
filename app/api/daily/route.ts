@@ -9,11 +9,10 @@ import { chartContextForTradition } from "@/lib/api/chart-context";
 import { VOICE_RULES } from "@/lib/voice";
 import { FORMAT_RULES } from "@/lib/format";
 import type { DailyReadingResponse, ExpertReading } from "@/lib/api/schemas";
-import { createClient } from "@/lib/supabase/server";
-import { adminClient } from "@/lib/supabase/admin";
 import { makeSeededTarotTools } from "@/lib/tools/tarot";
 import { IS_MOCK_MODE, mockDelay, mockDailyReading } from "@/lib/mock";
 import { bumpStreak } from "@/lib/api/streak";
+import { getUserFromRequest } from "@/lib/api/auth";
 
 export const maxDuration = 90;
 
@@ -33,21 +32,11 @@ export async function POST(req: Request) {
   const start = Date.now();
 
   // Prefer Bearer token (mobile); fall back to cookie session (web)
-  const authHeader = req.headers.get("Authorization");
-  let user: { id: string } | null = null;
+  const authResult = await getUserFromRequest(req);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let dbClient: any;
-  if (authHeader?.startsWith("Bearer ")) {
-    const token = authHeader.slice(7);
-    const { data: { user: u } } = await adminClient.auth.getUser(token);
-    user = u;
-    dbClient = adminClient;
-  } else {
-    const supabase = await createClient();
-    const { data: { user: u } } = await supabase.auth.getUser();
-    user = u;
-    dbClient = supabase;
-  }
+  const user: { id: string } | null = authResult?.user ?? null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const dbClient: any = authResult?.dbClient ?? null;
 
   // Geocode birth location if lat/lng missing (mobile sends null from DB when not yet geocoded)
   if (birthData && !birthData.latitude && !birthData.longitude && birthData.location) {

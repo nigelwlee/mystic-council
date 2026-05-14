@@ -13,6 +13,7 @@ import { VOICE_RULES } from "@/lib/voice";
 import { FORMAT_RULES } from "@/lib/format";
 import { getPostHogClient } from "@/lib/posthog-server";
 import { adminClient } from "@/lib/supabase/admin";
+import { getUserFromRequest } from "@/lib/api/auth";
 
 export const maxDuration = 90;
 
@@ -46,13 +47,12 @@ export async function POST(req: Request) {
   }
   const { birthData, date, chart } = parsed.data;
 
-  // Best-effort user extraction for cache isolation (no hard auth gate here — NIG-159)
-  let streamUserId = "anon";
-  const authHeader = req.headers.get("Authorization");
-  if (authHeader?.startsWith("Bearer ")) {
-    const { data: { user } } = await adminClient.auth.getUser(authHeader.slice(7));
-    if (user) streamUserId = user.id;
+  // Hard auth gate — unauthenticated requests return 401
+  const authResult = await getUserFromRequest(req);
+  if (!authResult) {
+    return new Response(null, { status: 401 });
   }
+  const streamUserId = authResult.user.id;
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
@@ -194,7 +194,7 @@ export async function POST(req: Request) {
 
       const posthog = getPostHogClient();
       posthog.capture({
-        distinctId: parsed.data.birthData?.name ?? "anonymous",
+        distinctId: streamUserId,
         event: "daily_request_completed",
         properties: {
           expertCount: expertReadings.length,
