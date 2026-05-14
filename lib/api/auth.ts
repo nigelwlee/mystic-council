@@ -2,7 +2,6 @@ import { adminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { User } from "@supabase/supabase-js";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function getUserFromRequest(
   req: Request
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

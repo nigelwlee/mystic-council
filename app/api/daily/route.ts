@@ -33,7 +33,6 @@ export async function POST(req: Request) {
 
   // Prefer Bearer token (mobile); fall back to cookie session (web)
   const authResult = await getUserFromRequest(req);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const user: { id: string } | null = authResult?.user ?? null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const dbClient: any = authResult?.dbClient ?? null;
