@@ -302,7 +302,7 @@ export default function ChatTab() {
         setPending(false);
       }
     },
-    [pending, birthData, accessToken, userId, todayISO]
+    [pending, birthData, userId, todayISO]
   );
 
   useEffect(() => {
