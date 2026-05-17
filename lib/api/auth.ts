@@ -1,11 +1,10 @@
 import { adminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
-import type { User } from "@supabase/supabase-js";
+import type { User, SupabaseClient } from "@supabase/supabase-js";
 
 export async function getUserFromRequest(
   req: Request
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-): Promise<{ user: User; dbClient: any } | null> {
+): Promise<{ user: User; dbClient: SupabaseClient } | null> {
   // Bearer first (mobile) — if header is present, don't fall through to cookie
   const authHeader = req.headers.get("authorization") ?? "";
   if (authHeader.startsWith("Bearer ")) {
