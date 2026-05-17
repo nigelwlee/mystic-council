@@ -125,6 +125,7 @@ export async function runSingleExpert(
   birthData: BirthData | null,
   chartContext?: string | null,
   userId?: string | null,
+  deadlineMs?: number,
 ): Promise<ExpertReading & { durationMs: number }> {
   const [knowledge, promptTemplate] = await Promise.all([
     loadKnowledge(expert.knowledgePath),
@@ -146,19 +147,25 @@ export async function runSingleExpert(
   const finalUserMessage = chartContext ? `${chartContext}${userMessage}` : userMessage;
 
   const start = Date.now();
-  // 25s per attempt × up to 3 models = 75s max, fits within /api/council + /api/daily maxDuration=90
-  const EXPERT_TIMEOUT_MS = 25_000;
+  // 14s per attempt; caller may pass deadlineMs to stop fallback chain early
+  const EXPERT_TIMEOUT_MS = 14_000;
   const expertModels = [expert.model, ...(expert.fallbackModels ?? [])];
 
   try {
     const content = await runWithFallback(expertModels, async (model, attempt) => {
       const attemptStart = Date.now();
+      if (deadlineMs && Date.now() >= deadlineMs) {
+        throw new Error(`Expert ${expert.id} skipped — past global deadline`);
+      }
       try {
         // When chart facts are already injected as context, skip tool calls entirely
         const toolsArg = chartContext
           ? {}
           : patchToolsWithBirthData(expert.tools, birthData);
         const maxStepsArg = chartContext ? 1 : 4;
+        const attemptTimeout = deadlineMs
+          ? Math.max(1_000, Math.min(EXPERT_TIMEOUT_MS, deadlineMs - Date.now()))
+          : EXPERT_TIMEOUT_MS;
         const result = await Promise.race([
           generateText({
             model: openrouter(model),
@@ -169,8 +176,8 @@ export async function runSingleExpert(
           }),
           new Promise<never>((_, reject) =>
             setTimeout(
-              () => reject(new Error(`Expert ${expert.id} timed out after ${EXPERT_TIMEOUT_MS}ms`)),
-              EXPERT_TIMEOUT_MS,
+              () => reject(new Error(`Expert ${expert.id} timed out after ${attemptTimeout}ms`)),
+              attemptTimeout,
             ),
           ),
         ]);
@@ -291,7 +298,7 @@ export async function synthesize(
   const judgeModels = [opts.judgeConfig.model, ...(opts.judgeConfig.fallbackModels ?? [])];
 
   try {
-    const JUDGE_TIMEOUT_MS = 30_000;
+    const JUDGE_TIMEOUT_MS = 12_000;
     const judgeResult = await runWithFallback(judgeModels, async (model, attempt) => {
       const attemptStart = Date.now();
       try {

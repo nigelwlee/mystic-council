@@ -76,7 +76,7 @@ export async function fetchDaily(params: FetchDailyParams): Promise<DailyReading
   const { accessToken, birthData, date, force } = params;
   const url = force ? `${API_BASE}/api/daily?force=1` : `${API_BASE}/api/daily`;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 95_000);
+  const timeout = setTimeout(() => controller.abort(), 65_000);
   let res: Response;
   try {
     res = await fetch(url, {
