@@ -6,8 +6,7 @@ import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
 import { AspectCalloutsSection } from '../../components/AspectCalloutsSection';
-
-const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL!;
+import { getDaily, type DailyReadingResponse } from '../../lib/daily-api';
 
 const TRADITION_ORDER = ['stella', 'priya', 'master-wei', 'madame-crow', 'pythia'];
 
@@ -23,7 +22,7 @@ export default function ReadTab() {
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [reading, setReading] = useState<any>(null);
+  const [reading, setReading] = useState<DailyReadingResponse | null>(null);
   const [error, setError] = useState('');
   const [oracleCollapsed, setOracleCollapsed] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -57,29 +56,12 @@ export default function ReadTab() {
         longitude: birthData.longitude,
       };
 
-      const url = force ? `${API_BASE}/api/daily?force=1` : `${API_BASE}/api/daily`;
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 95_000);
-      let res: Response;
-      try {
-        res = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${session.access_token}`,
-          },
-          body: JSON.stringify({
-            birthData: mapped,
-            date: todayDate,
-          }),
-          signal: controller.signal,
-        });
-      } finally {
-        clearTimeout(timeout);
-      }
-
-      if (!res.ok) throw new Error(`API error ${res.status}`);
-      const json = await res.json();
+      const json = await getDaily({
+        accessToken: session.access_token,
+        birthData: mapped,
+        date: todayDate,
+        force,
+      });
       setReading(json);
     } catch (e: any) {
       setReading(null);

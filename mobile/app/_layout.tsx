@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import type { Session } from '@supabase/supabase-js';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { recovery } from '../lib/recovery';
+import { triggerDailyGeneration, clearDailyCache } from '../lib/daily-api';
 
 
 async function resolveRoute(s: Session | null) {
@@ -22,11 +23,14 @@ export default function RootLayout() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       resolveRoute(session);
+      if (session && !recovery.active) triggerDailyGeneration();
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (recovery.active) return;
       resolveRoute(session);
+      if (event === 'SIGNED_IN' && session) triggerDailyGeneration();
+      if (event === 'SIGNED_OUT') clearDailyCache();
     });
 
     return () => subscription.unsubscribe();
