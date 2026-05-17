@@ -25,6 +25,7 @@ const openrouter = createOpenAI({
 const JudgeDailySchema = z.object({
   oneLiner: z.string().describe("One sentence, max 12 words. The clearest signal from today's readings."),
   summary: z.string().describe("2-3 sentences expanding on the one-liner. Plain language."),
+  chimers: z.array(z.enum(["western", "vedic", "chinese", "tarot", "numerology"])).describe("0-2 tradition IDs whose reading is most prominent in today's patterns."),
 });
 
 function dailyCacheKey(birthData: Record<string, unknown> | null, date: string, userId: string): string {
@@ -36,7 +37,7 @@ function dailyCacheKey(birthData: Record<string, unknown> | null, date: string, 
     latitude: birthData?.latitude ?? null,
     longitude: birthData?.longitude ?? null,
   });
-  return "v2:" + createHash("sha256").update(canonical + "|" + date).digest("hex").slice(0, 28);
+  return "v3:" + createHash("sha256").update(canonical + "|" + date).digest("hex").slice(0, 28);
 }
 
 export async function POST(req: Request) {
@@ -143,6 +144,7 @@ export async function POST(req: Request) {
           oracle = {
             summary: judgeResult.object.summary,
             oneLiner: judgeResult.object.oneLiner,
+            chimers: judgeResult.object.chimers,
             durationMs: Date.now() - judgeStart,
             usage: judgeResult.usage
               ? {
@@ -161,6 +163,7 @@ export async function POST(req: Request) {
           oracle = {
             summary: "The council was unable to synthesize a verdict.",
             oneLiner: "Py fell silent — please try again.",
+            chimers: [],
             durationMs: Date.now() - judgeStart,
             systemPrompt: judgeSystemPrompt,
             model: judgeConfig.model,

@@ -78,3 +78,13 @@ jobs:
       - name: Smoke — pipeline (mock mode)
         run: |
           curl --fail -sS "${{ steps.preview.outputs.url }}/api/health/pipeline?mock=1" | tee /dev/stderr | jq -e '.ok == true'
+
+      - name: Smoke — stream endpoints reachable (expect 401 without auth)
+        run: |
+          for path in /api/daily/stream /api/council/stream; do
+            status=$(curl -o /dev/null -w "%{http_code}" -sS -X POST \
+              -H "Content-Type: application/json" -d '{}' \
+              "${{ steps.preview.outputs.url }}$path")
+            echo "$path → $status"
+            [ "$status" = "401" ] || { echo "Expected 401, got $status"; exit 1; }
+          done
