@@ -14,7 +14,7 @@ import { IS_MOCK_MODE, mockDelay, mockDailyReading } from "@/lib/mock";
 import { bumpStreak } from "@/lib/api/streak";
 import { getUserFromRequest } from "@/lib/api/auth";
 
-export const maxDuration = 90;
+export const maxDuration = 60;
 
 const openrouter = createOpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
@@ -30,6 +30,8 @@ export async function POST(req: Request) {
 
   const { birthData, date, chart } = parsed.data;
   const start = Date.now();
+  const BUDGET_MS = 52_000;
+  const deadline = start + BUDGET_MS;
 
   // Prefer Bearer token (mobile); fall back to cookie session (web)
   const authResult = await getUserFromRequest(req);
@@ -40,10 +42,13 @@ export async function POST(req: Request) {
   // Geocode birth location if lat/lng missing (mobile sends null from DB when not yet geocoded)
   if (birthData && !birthData.latitude && !birthData.longitude && birthData.location) {
     try {
+      const geoAbort = new AbortController();
+      const geoTimeout = setTimeout(() => geoAbort.abort(), 4_000);
       const geoRes = await fetch(
         `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(birthData.location)}`,
-        { headers: { "Accept-Language": "en", "User-Agent": "mystic-council/1.0" } }
+        { headers: { "Accept-Language": "en", "User-Agent": "mystic-council/1.0" }, signal: geoAbort.signal }
       );
+      clearTimeout(geoTimeout);
       const geoData = await geoRes.json() as { lat: string; lon: string }[];
       if (geoData[0]) {
         birthData.latitude = parseFloat(parseFloat(geoData[0].lat).toFixed(4));
@@ -83,18 +88,34 @@ export async function POST(req: Request) {
 
   const dailyMessage = `Give me my daily reading for ${date}. What do the stars, cards, and numbers say about today?`;
 
-  const settled = await Promise.allSettled(
-    experts.map((e) => {
-      const tid = EXPERT_ID_TO_TRADITION[e.id];
-      const ctx = tid ? chartContextForTradition(chart, tid) : null;
-      // For the tarot expert, inject date-seeded tools so the same date always yields the same cards
-      const expertWithSeed =
-        e.id === "madame-crow"
-          ? { ...e, tools: makeSeededTarotTools(date) }
-          : e;
-      return runSingleExpert(expertWithSeed, dailyMessage, birthData, ctx, user?.id);
-    })
-  );
+  // Hard cap on the expert phase so the judge always has budget. Experts past the
+  // window are treated as rejections — the existing settled.map builds error stubs.
+  const EXPERT_PHASE_MS = 34_000;
+  const settled = await Promise.race([
+    Promise.allSettled(
+      experts.map((e) => {
+        const tid = EXPERT_ID_TO_TRADITION[e.id];
+        const ctx = tid ? chartContextForTradition(chart, tid) : null;
+        // For the tarot expert, inject date-seeded tools so the same date always yields the same cards
+        const expertWithSeed =
+          e.id === "madame-crow"
+            ? { ...e, tools: makeSeededTarotTools(date) }
+            : e;
+        return runSingleExpert(expertWithSeed, dailyMessage, birthData, ctx, user?.id, deadline);
+      })
+    ),
+    new Promise<PromiseSettledResult<ExpertReading & { durationMs: number }>[]>((resolve) =>
+      setTimeout(() => {
+        // Return all-rejected stubs so the map below still produces error entries
+        resolve(
+          experts.map(() => ({
+            status: "rejected" as const,
+            reason: new Error("Expert phase timed out"),
+          }))
+        );
+      }, EXPERT_PHASE_MS)
+    ),
+  ]);
 
   const expertReadings: ExpertReading[] = settled.map((r, i) => {
     if (r.status === "fulfilled") return r.value;
@@ -140,8 +161,12 @@ export async function POST(req: Request) {
   const judgeUserMessage = `Synthesize a daily reading for ${date} in 2-3 sentences.`;
   const judgeModels = [judgeConfig.model, ...(judgeConfig.fallbackModels ?? [])];
   let oracle: DailyReadingResponse["oracle"];
+  // Cap judge to whatever budget remains, capped at 10s; skip entirely if out of budget.
+  const judgeCap = Math.min(10_000, deadline - Date.now() - 4_000);
   try {
+    if (judgeCap <= 0) throw new Error("Judge skipped — no budget remaining");
     const judgeResult = await runWithFallback(judgeModels, async (model) => {
+      if (Date.now() >= deadline) throw new Error("Judge skipped — past global deadline");
       return Promise.race([
         generateObject({
           model: openrouter(model),
@@ -151,7 +176,7 @@ export async function POST(req: Request) {
           mode: "json",
         }),
         new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("Judge timed out after 30s")), 30_000),
+          setTimeout(() => reject(new Error(`Judge timed out after ${judgeCap}ms`)), judgeCap),
         ),
       ]);
     });
