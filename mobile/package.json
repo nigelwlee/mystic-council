@@ -8,6 +8,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "doctor": "npx expo-doctor",
+    "typecheck": "tsc --noEmit",
     "types:generate": "supabase gen types typescript --project-id kcywwmglfgzcqeglmpkx > lib/database.types.ts"
   },
   "dependencies": {
