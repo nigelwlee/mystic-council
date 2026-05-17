@@ -9,6 +9,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { router } from 'expo-router';
 import { supabase } from '../lib/supabase';
 
 export default function AuthScreen() {
@@ -79,6 +80,12 @@ export default function AuthScreen() {
           {mode === 'signin' ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
         </Text>
       </Pressable>
+
+      {mode === 'signin' && (
+        <Pressable onPress={() => router.push('/reset-password')}>
+          <Text style={styles.toggle}>Forgot password?</Text>
+        </Pressable>
+      )}
     </KeyboardAvoidingView>
   );
 }

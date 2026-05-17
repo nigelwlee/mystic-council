@@ -216,8 +216,8 @@ export default function ChatTab() {
             role: row.role as 'user' | 'assistant',
             content: row.content,
             createdAt: row.created_at,
-            ...(row.role === 'assistant' && row.oracle ? { oracle: row.oracle as ChatOracle } : {}),
-            ...(row.role === 'assistant' && row.experts ? { experts: row.experts as ChatExpertReading[] } : {}),
+            ...(row.role === 'assistant' && row.oracle ? { oracle: row.oracle as unknown as ChatOracle } : {}),
+            ...(row.role === 'assistant' && row.experts ? { experts: row.experts as unknown as ChatExpertReading[] } : {}),
           }))
         );
       }

@@ -4,6 +4,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { supabase } from '../lib/supabase';
 import type { Session } from '@supabase/supabase-js';
 import { ErrorBoundary } from '../components/ErrorBoundary';
+import { recovery } from '../lib/recovery';
 
 
 async function resolveRoute(s: Session | null) {
@@ -24,6 +25,7 @@ export default function RootLayout() {
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (recovery.active) return;
       resolveRoute(session);
     });
 
@@ -37,6 +39,7 @@ export default function RootLayout() {
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="auth" />
           <Stack.Screen name="onboarding" />
+          <Stack.Screen name="reset-password" />
         </Stack>
       </ErrorBoundary>
     </GestureHandlerRootView>
