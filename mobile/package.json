@@ -9,7 +9,10 @@
     "web": "expo start --web",
     "doctor": "npx expo-doctor",
     "typecheck": "tsc --noEmit",
-    "types:generate": "supabase gen types typescript --project-id kcywwmglfgzcqeglmpkx > lib/database.types.ts"
+    "types:generate": "supabase gen types typescript --project-id kcywwmglfgzcqeglmpkx > lib/database.types.ts",
+    "build:ios": "npx eas-cli build --platform ios --profile production",
+    "build:ios:preview": "npx eas-cli build --platform ios --profile preview",
+    "submit:ios": "npx eas-cli submit --platform ios --profile production --latest"
   },
   "dependencies": {
     "@react-native-community/datetimepicker": "^8.4.4",
@@ -32,7 +35,7 @@
   "devDependencies": {
     "@types/react": "~19.1.0",
     "babel-preset-expo": "^54.0.10",
-    "typescript": "~5.9.2"
+"typescript": "~5.9.2"
   },
   "private": true
 }

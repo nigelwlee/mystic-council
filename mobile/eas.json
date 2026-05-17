@@ -1,0 +1,30 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "preview": {
+      "distribution": "internal",
+      "ios": {
+        "simulator": false
+      },
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://kcywwmglfgzcqeglmpkx.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_Y50OTIu6Sail-WrZNqooBw_IZqNMGx7",
+        "EXPO_PUBLIC_API_BASE_URL": "https://mystic-council.vercel.app"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://kcywwmglfgzcqeglmpkx.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_Y50OTIu6Sail-WrZNqooBw_IZqNMGx7",
+        "EXPO_PUBLIC_API_BASE_URL": "https://mystic-council.vercel.app"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}
