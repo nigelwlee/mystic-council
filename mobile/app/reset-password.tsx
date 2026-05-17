@@ -112,12 +112,11 @@ export default function ResetPasswordScreen() {
         <>
           <TextInput
             style={styles.input}
-            placeholder="6-digit code"
+            placeholder="Reset code"
             placeholderTextColor="#6B7280"
             value={code}
             onChangeText={setCode}
             keyboardType="number-pad"
-            maxLength={6}
             autoFocus
           />
           <TextInput
