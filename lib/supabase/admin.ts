@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { serverEnv } from "@/lib/env";
 
 // Service-role client — bypasses RLS. Server-side only, never expose to client.
 // Lazy singleton: defers createClient() until first method call so module
@@ -7,28 +8,24 @@ let _client: ReturnType<typeof createClient> | null = null;
 
 function getClient() {
   if (!_client) {
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SECRET_KEY) {
-      console.error("[admin] NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SECRET_KEY is missing — every admin call will fail");
-    }
     _client = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SECRET_KEY!,
+      serverEnv.NEXT_PUBLIC_SUPABASE_URL,
+      serverEnv.SUPABASE_SECRET_KEY,
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
   }
   return _client;
 }
 
-// Typed as `any` intentionally: the service-role client bypasses RLS and is
-// used with raw table names not covered by generated types. Callers are
-// responsible for asserting result shapes.
+// Typed as `any`: the web project has no generated DB types, so callers are
+// responsible for asserting result shapes. The proxy is safe — it delegates
+// every property access to the real SupabaseClient singleton.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const adminClient: any = new Proxy({} as any, {
   get(_target, prop) {
     const client = getClient();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const c = client as any;
-    const value = c[prop];
-    return typeof value === "function" ? value.bind(c) : value;
+    const value = (client as any)[prop];
+    return typeof value === "function" ? value.bind(client) : value;
   },
 });
