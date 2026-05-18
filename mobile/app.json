@@ -24,7 +24,6 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.mysticcouncil.app",
-      "buildNumber": "1",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
