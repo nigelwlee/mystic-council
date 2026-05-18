@@ -2,7 +2,7 @@
   "expo": {
     "name": "Mystic Council",
     "slug": "mystic-council-mobile",
-    "owner": "<expo-username>",
+    "owner": "nigelwlee",
     "scheme": "mystic-council",
     "version": "1.0.0",
     "runtimeVersion": {
@@ -12,7 +12,10 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
-    "plugins": ["expo-router", "expo-secure-store"],
+    "plugins": [
+      "expo-router",
+      "expo-secure-store"
+    ],
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
@@ -26,11 +29,6 @@
         "ITSAppUsesNonExemptEncryption": false
       }
     },
-    "extra": {
-      "eas": {
-        "projectId": "<filled-by-eas-init>"
-      }
-    },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
@@ -41,6 +39,12 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "487c65d2-087d-4e25-823f-e76edc60031b"
+      }
     }
   }
 }
