@@ -2,8 +2,12 @@
   "expo": {
     "name": "Mystic Council",
     "slug": "mystic-council-mobile",
+    "owner": "<expo-username>",
     "scheme": "mystic-council",
     "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -15,7 +19,17 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mysticcouncil.app",
+      "buildNumber": "1",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "<filled-by-eas-init>"
+      }
     },
     "android": {
       "adaptiveIcon": {
