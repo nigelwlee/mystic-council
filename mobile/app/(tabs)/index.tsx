@@ -74,7 +74,7 @@ export default function ReadTab() {
   async function onRefresh() {
     if (loading) return;
     setRefreshing(true);
-    await fetchReading(true);
+    await fetchReading();
     setRefreshing(false);
   }
 
@@ -102,7 +102,7 @@ export default function ReadTab() {
     <View style={styles.container}>
       <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
         <Text style={styles.dateText}>{dateLabel}</Text>
-        <Pressable onPress={() => fetchReading(true)} disabled={loading || refreshing}>
+        <Pressable onPress={() => fetchReading()} disabled={loading || refreshing}>
           <Text style={styles.refreshBtn}>Refresh</Text>
         </Pressable>
       </View>

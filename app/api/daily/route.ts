@@ -13,6 +13,7 @@ import { makeSeededTarotTools } from "@/lib/tools/tarot";
 import { IS_MOCK_MODE, mockDelay, mockDailyReading } from "@/lib/mock";
 import { bumpStreak } from "@/lib/api/streak";
 import { getUserFromRequest } from "@/lib/api/auth";
+import { buildChart } from "@/lib/api/build-chart";
 
 export const maxDuration = 60;
 
@@ -28,7 +29,8 @@ export async function POST(req: Request) {
     return Response.json({ error: parsed.error.flatten() }, { status: 400 });
   }
 
-  const { birthData, date, chart } = parsed.data;
+  const { birthData, date } = parsed.data;
+  let chart = parsed.data.chart;
   const start = Date.now();
   const BUDGET_MS = 52_000;
   const deadline = start + BUDGET_MS;
@@ -73,7 +75,7 @@ export async function POST(req: Request) {
       .select("output")
       .eq("user_id", user.id)
       .eq("reading_date", date)
-      .eq("kind", "daily-v2")
+      .eq("kind", "daily")
       .maybeSingle();
 
     if (cached?.output) {
@@ -84,6 +86,17 @@ export async function POST(req: Request) {
   if (IS_MOCK_MODE) {
     await mockDelay(300, 800);
     return Response.json(mockDailyReading(date));
+  }
+
+  // Pre-compute chart server-side so all experts receive deterministic, lat/lng-accurate
+  // chart context and bypass the unreliable tool-calling path under gemini.
+  if (!chart && birthData?.date) {
+    try {
+      chart = await buildChart(birthData, date, user?.id ?? undefined);
+    } catch (err) {
+      console.log(JSON.stringify({ event: "chart_prefetch_fail", err: err instanceof Error ? err.message : String(err) }));
+      // fall back to per-expert tool-calling
+    }
   }
 
   const dailyMessage = `Give me my daily reading for ${date}. What do the stars, cards, and numbers say about today?`;
@@ -229,13 +242,13 @@ export async function POST(req: Request) {
       .upsert(
         {
           user_id: user.id,
-          kind: "daily-v2",
+          kind: "daily",
           reading_date: date,
           input: { birthData, date },
           output: reading,
           total_duration_ms: reading.totalDurationMs,
         },
-        { onConflict: "user_id,reading_date" }
+        { onConflict: "user_id,kind,reading_date" }
       );
     if (dbError) {
       console.error("[daily] Supabase upsert error:", dbError.message);
