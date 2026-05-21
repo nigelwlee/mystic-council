@@ -9,7 +9,7 @@ export const numerologist: ExpertConfig = {
   color: "#059669",
   textColor: "text-emerald-400",
   knowledgePath: "numerology",
-  model: "deepseek/deepseek-chat",
-  fallbackModels: ["qwen/qwen3-235b-a22b", "moonshotai/kimi-k2"],
+  model: "google/gemini-2.0-flash-001",
+  fallbackModels: ["moonshotai/kimi-k2", "deepseek/deepseek-chat"],
   tools: numerologyTools,
 };

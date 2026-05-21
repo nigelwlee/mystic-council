@@ -9,7 +9,7 @@ export const vedicAstrologer: ExpertConfig = {
   color: "#d97706",
   textColor: "text-amber-400",
   knowledgePath: "vedic-astrology",
-  model: "deepseek/deepseek-chat",
-  fallbackModels: ["qwen/qwen3-235b-a22b", "moonshotai/kimi-k2"],
+  model: "google/gemini-2.0-flash-001",
+  fallbackModels: ["moonshotai/kimi-k2", "deepseek/deepseek-chat"],
   tools: vedicAstrologyTools,
 };

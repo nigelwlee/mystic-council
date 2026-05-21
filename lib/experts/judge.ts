@@ -9,8 +9,8 @@ export const judgeConfig = {
   emoji: "◈",
   color: "#a16207",
   textColor: "text-yellow-600",
-  model: "deepseek/deepseek-chat",
-  fallbackModels: ["qwen/qwen3-235b-a22b"],
+  model: "google/gemini-2.0-flash-001",
+  fallbackModels: ["moonshotai/kimi-k2", "deepseek/deepseek-chat"],
 };
 
 export async function loadJudgePrompt(): Promise<string> {

@@ -9,7 +9,7 @@ export const tarotReader: ExpertConfig = {
   color: "#7c3aed",
   textColor: "text-violet-400",
   knowledgePath: "tarot",
-  model: "deepseek/deepseek-chat",
-  fallbackModels: ["qwen/qwen3-235b-a22b", "moonshotai/kimi-k2"],
+  model: "google/gemini-2.0-flash-001",
+  fallbackModels: ["moonshotai/kimi-k2", "deepseek/deepseek-chat"],
   tools: tarotTools,
 };
