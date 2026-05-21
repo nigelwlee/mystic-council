@@ -48,12 +48,8 @@ export async function POST(req: Request) {
   }
   const { birthData, date, chart } = parsed.data;
 
-  // Hard auth gate — unauthenticated requests return 401
   const authResult = await getUserFromRequest(req);
-  if (!authResult) {
-    return new Response(null, { status: 401 });
-  }
-  const streamUserId = authResult.user.id;
+  const streamUserId: string | null = authResult?.user.id ?? null;
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
@@ -66,29 +62,29 @@ export async function POST(req: Request) {
       emit({ type: "run-start", endpoint: "daily", input: parsed.data });
 
       // ── Cache check ──────────────────────────────────────────────────────────
-      const cacheKey = dailyCacheKey(birthData as Record<string, unknown> | null, date, streamUserId);
-      const { data: cached } = await adminClient
-        .from("daily_reading_cache")
-        .select("content")
-        .eq("cache_key", cacheKey)
-        .single() as { data: { content: unknown } | null };
+      const cacheKey = streamUserId ? dailyCacheKey(birthData as Record<string, unknown> | null, date, streamUserId) : null;
+      if (streamUserId && cacheKey) {
+        const { data: cached } = await adminClient
+          .from("daily_reading_cache")
+          .select("content")
+          .eq("cache_key", cacheKey)
+          .single() as { data: { content: unknown } | null };
 
-      if (cached) {
-        const hit = cached.content as DailyReadingResponse & { experts: Array<Record<string, unknown>>; oracle: Record<string, unknown> };
-        console.log(JSON.stringify({ event: "cache_hit", endpoint: "daily", cacheKey }));
-        for (const expert of hit.experts) {
-          emit({ type: "expert-start", expertId: expert.expertId, expertName: expert.expertName, expertEmoji: expert.expertEmoji, color: expert.color, textColor: expert.textColor });
-          emit({ type: "expert-complete", ...expert });
+        if (cached) {
+          const hit = cached.content as DailyReadingResponse & { experts: Array<Record<string, unknown>>; oracle: Record<string, unknown> };
+          console.log(JSON.stringify({ event: "cache_hit", endpoint: "daily", cacheKey }));
+          for (const expert of hit.experts) {
+            emit({ type: "expert-start", expertId: expert.expertId, expertName: expert.expertName, expertEmoji: expert.expertEmoji, color: expert.color, textColor: expert.textColor });
+            emit({ type: "expert-complete", ...expert });
+          }
+          emit({ type: "oracle-start" });
+          emit({ type: "oracle-complete", oracle: hit.oracle });
+          emit({ type: "run-complete", ...hit, cached: true, totalDurationMs: Date.now() - runStart });
+          controller.close();
+          return;
         }
-        emit({ type: "oracle-start" });
-        emit({ type: "oracle-complete", oracle: hit.oracle });
-        emit({ type: "run-complete", ...hit, cached: true, totalDurationMs: Date.now() - runStart });
-        controller.close();
-        return;
+        console.log(JSON.stringify({ event: "cache_miss", endpoint: "daily", cacheKey }));
       }
-
-      // ── Cache miss: run experts ───────────────────────────────────────────────
-      console.log(JSON.stringify({ event: "cache_miss", endpoint: "daily", cacheKey }));
       const expertPromises = experts.map(async (expert) => {
         emit({ type: "expert-start", expertId: expert.id, expertName: expert.name, expertEmoji: expert.emoji, color: expert.color, textColor: expert.textColor });
         try {
@@ -189,15 +185,17 @@ export async function POST(req: Request) {
       }
 
       // ── Store to cache ────────────────────────────────────────────────────────
-      await adminClient.from("daily_reading_cache").upsert({
-        cache_key: cacheKey,
-        reading_date: date,
-        content: runComplete,
-      });
+      if (streamUserId && cacheKey) {
+        await adminClient.from("daily_reading_cache").upsert({
+          cache_key: cacheKey,
+          reading_date: date,
+          content: runComplete,
+        });
+      }
 
       const posthog = getPostHogClient();
       posthog.capture({
-        distinctId: streamUserId,
+        distinctId: streamUserId ?? "anonymous",
         event: "daily_request_completed",
         properties: {
           expertCount: expertReadings.length,
