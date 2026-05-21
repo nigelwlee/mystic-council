@@ -38,11 +38,7 @@ const JudgeChatSchema = z.object({
 });
 
 export async function POST(req: Request) {
-  // Hard auth gate — unauthenticated requests return 401
   const authResult = await getUserFromRequest(req);
-  if (!authResult) {
-    return new Response(null, { status: 401 });
-  }
 
   const body = await req.json();
   const parsed = QuestionInputSchema.safeParse(body);
@@ -178,7 +174,7 @@ export async function POST(req: Request) {
 
       const posthog = getPostHogClient();
       posthog.capture({
-        distinctId: authResult.user.id,
+        distinctId: authResult?.user.id ?? "anonymous",
         event: "council_request_completed",
         properties: {
           expertCount: expertReadings.length,
