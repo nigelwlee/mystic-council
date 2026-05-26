@@ -6,7 +6,7 @@ import {
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
-import { getDaily, type DailyReadingResponse, type ExpertReading, type AspectKey } from '../../lib/daily-api';
+import { getDaily, type DailyReadingResponse, type ExpertReading, type AspectKey, type ChecklistItem } from '../../lib/daily-api';
 import { C, F, LUCK_COLOR } from '../../lib/theme';
 import { EXPERT_PATTERN, TRADITION_ORDER, TRADITION_LABEL } from '../../lib/patterns';
 import { LoomBar } from '../../components/primitives/LoomBar';
@@ -15,45 +15,6 @@ import { SectionLabel } from '../../components/primitives/SectionLabel';
 import { Medallion } from '../../components/primitives/Medallion';
 import { HatchBg } from '../../components/primitives/HatchBg';
 
-// ─── Data derivations ──────────────────────────────────────────────────────────
-
-function deriveLuck(experts: ExpertReading[]): string {
-  let strong = 0;
-  for (const e of experts) {
-    for (const s of e.content.aspectSignals ?? []) {
-      if (s.strength === 'strong') strong++;
-    }
-  }
-  if (strong >= 3) return 'Strong';
-  if (strong === 2) return 'Fair';
-  return 'Weak';
-}
-
-function deriveStatus(e: ExpertReading): 'Good' | 'Fair' | 'Caution' {
-  if (e.error) return 'Caution';
-  const sigs = e.content.aspectSignals ?? [];
-  if (sigs.some(s => s.strength === 'strong')) return 'Good';
-  return sigs.length > 0 ? 'Fair' : 'Good';
-}
-
-function firstSentence(text: string): string {
-  const m = text?.match(/^[^.!?]+[.!?]/);
-  return m ? m[0] : (text?.slice(0, 80) ?? '');
-}
-
-function deriveChecklist(experts: ExpertReading[]) {
-  const items: Array<{ type: 'positive' | 'warning'; text: string }> = [];
-  for (const e of experts) {
-    const sigs = e.content.aspectSignals ?? [];
-    if (sigs.some(s => s.strength === 'strong')) {
-      items.push({ type: 'positive', text: e.content.oneLiner });
-    }
-  }
-  if (experts.some(e => e.error)) {
-    items.push({ type: 'warning', text: 'Some readings were unavailable today' });
-  }
-  return items.slice(0, 4);
-}
 
 function getAspectData(reading: DailyReadingResponse, aspect: AspectKey) {
   const callout = reading.oracle.aspectCallouts?.find(c => c.aspect === aspect);
@@ -82,14 +43,6 @@ const ASPECT_TABS: { id: AspectKey; label: string }[] = [
   { id: 'work',      label: 'Work' },
 ];
 
-const QUOTES = [
-  'You build a successful life one day at a time.',
-  'The quiet work is finishing itself — let it.',
-  'Clear the lot before you pour the foundation.',
-  'Speak from what you know.',
-  'Careful work yields disproportionate results.',
-];
-
 // ─── Expert card ───────────────────────────────────────────────────────────────
 
 const CARD_W = 220;
@@ -98,9 +51,9 @@ const CARD_GAP = 12;
 
 function ExpertCard({ expert }: { expert: ExpertReading }) {
   const pattern = EXPERT_PATTERN[expert.expertId] ?? 'cross';
-  const status = deriveStatus(expert);
+  const status = expert.error ? 'Caution' : (expert.content.status ?? 'Good');
   const statusColor = STATUS_COLOR[status];
-  const action = firstSentence(expert.content.summary);
+  const action = expert.content.action || expert.content.oneLiner;
   const tradLabel = TRADITION_LABEL[expert.expertId] ?? expert.expertId.toUpperCase();
 
   return (
@@ -246,10 +199,14 @@ export default function ReadTab() {
   const sortedExperts = reading
     ? TRADITION_ORDER.map(id => reading.experts.find(e => e.expertId === id)).filter(Boolean) as ExpertReading[]
     : [];
-  const luck = reading ? deriveLuck(reading.experts) : null;
+  const luck = reading?.oracle.commonThread?.luck ?? null;
   const luckColor = luck ? (LUCK_COLOR[luck] ?? C.muted) : C.muted;
-  const checklist = reading ? deriveChecklist(reading.experts) : [];
-  const quote = QUOTES[new Date().getDay() % QUOTES.length];
+  const charms = reading?.oracle.commonThread?.charms ?? [];
+  const watchouts = reading?.oracle.commonThread?.watchouts ?? [];
+  const checklist: ChecklistItem[] = reading?.oracle.weaving?.checklist ?? [];
+  const weavingSubtitle = reading?.oracle.weaving?.subtitle ?? 'Most of the council agrees';
+  const weavingHeadline = reading?.oracle.weaving?.headline ?? reading?.oracle.oneLiner ?? '';
+  const quote = reading?.oracle.quote ?? '';
 
   return (
     <View style={[s.container, { backgroundColor: C.bg }]}>
@@ -283,12 +240,31 @@ export default function ReadTab() {
             <Text style={s.commonHeadline}>{reading.oracle.oneLiner}</Text>
             <Text style={s.commonSummary}>{reading.oracle.summary}</Text>
 
-            {/* Luck badge (full width — charms/watchouts deferred until backend ships) */}
             {luck && (
               <View style={s.luckRow}>
-                <View style={[s.luckDiamond, { borderColor: luckColor }]} />
-                <Text style={[s.luckWord, { color: luckColor }]}>{luck}</Text>
-                <Text style={s.luckLabel}>OVERALL LUCK</Text>
+                {/* Left 38%: luck */}
+                <View style={s.luckLeft}>
+                  <View style={[s.luckDiamond, { borderColor: luckColor }]} />
+                  <Text style={[s.luckWord, { color: luckColor }]}>{luck}</Text>
+                  <Text style={s.luckLabel}>OVERALL LUCK</Text>
+                </View>
+                {/* Right 62%: charms + watchouts */}
+                {(charms.length > 0 || watchouts.length > 0) && (
+                  <View style={s.luckRight}>
+                    {charms.map((c, i) => (
+                      <View key={`c${i}`} style={s.luckItem}>
+                        <Text style={s.luckItemDot}>✦</Text>
+                        <Text style={s.luckItemText}>{c}</Text>
+                      </View>
+                    ))}
+                    {watchouts.map((w, i) => (
+                      <View key={`w${i}`} style={s.luckItem}>
+                        <Text style={[s.luckItemDot, { color: '#C8846E' }]}>⚠</Text>
+                        <Text style={[s.luckItemText, { color: 'rgba(245,240,232,0.5)' }]}>{w}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
               </View>
             )}
           </View>
@@ -299,8 +275,8 @@ export default function ReadTab() {
           <View style={{ paddingTop: 24, paddingBottom: 28 }}>
             <View style={{ paddingHorizontal: 20 }}>
               <SectionLabel text="Weaving together the experts" />
-              <Text style={s.weavingSubtitle}>Most of the council agrees</Text>
-              <Text style={s.weavingHeadline}>{firstSentence(reading.oracle.summary)}</Text>
+              <Text style={s.weavingSubtitle}>{weavingSubtitle}</Text>
+              <Text style={s.weavingHeadline}>{weavingHeadline}</Text>
 
               {checklist.length > 0 && (
                 <View style={{ gap: 7, marginBottom: 26 }}>
@@ -361,7 +337,7 @@ export default function ReadTab() {
           {/* ── Footer ── */}
           <View style={s.footer}>
             <HatchBg variant="cross" alpha={0.08} />
-            <Text style={s.footerQuote}>"{quote}"</Text>
+            {!!quote && <Text style={s.footerQuote}>"{quote}"</Text>}
             <Pressable style={s.chatBtn} onPress={() => router.push('/(tabs)/chat')}>
               <Text style={s.chatBtnText}>CHAT WITH PY</Text>
             </Pressable>
@@ -392,10 +368,15 @@ const s = StyleSheet.create({
   section:         { padding: 24, paddingBottom: 32 },
   commonHeadline:  { fontFamily: F.display, fontSize: 28, color: C.text, lineHeight: 34, marginBottom: 14 },
   commonSummary:   { fontFamily: F.ui, fontSize: 13, color: 'rgba(245,240,232,0.72)', lineHeight: 21, marginBottom: 28 },
-  luckRow:         { flexDirection: 'row', alignItems: 'center', gap: 12, paddingTop: 16, borderTopWidth: 1, borderTopColor: 'rgba(245,240,232,0.08)' },
+  luckRow:         { flexDirection: 'row', paddingTop: 16, borderTopWidth: 1, borderTopColor: 'rgba(245,240,232,0.08)', gap: 16 },
+  luckLeft:        { width: '38%', gap: 6, alignItems: 'flex-start' },
   luckDiamond:     { width: 18, height: 18, borderWidth: 1.5, transform: [{ rotate: '45deg' }] },
   luckWord:        { fontFamily: F.display, fontSize: 20 },
-  luckLabel:       { fontFamily: F.ui, fontSize: 8, letterSpacing: 1.6, color: C.dim, flexShrink: 1 },
+  luckLabel:       { fontFamily: F.ui, fontSize: 8, letterSpacing: 1.6, color: C.dim },
+  luckRight:       { flex: 1, gap: 5 },
+  luckItem:        { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
+  luckItemDot:     { fontFamily: F.ui, fontSize: 9, color: C.accentDim, marginTop: 1 },
+  luckItemText:    { fontFamily: F.ui, fontSize: 10, color: 'rgba(245,240,232,0.65)', lineHeight: 16, flex: 1 },
 
   // Weaving
   weavingSubtitle: { fontFamily: F.ui, fontSize: 10, color: C.dim, letterSpacing: 1.0, marginBottom: 6 },
