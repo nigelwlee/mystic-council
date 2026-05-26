@@ -76,10 +76,30 @@ export const AspectCalloutSchema = z.object({
   })),
 });
 
+const ChecklistItemSchema = z.object({
+  type: z.enum(['positive', 'warning']),
+  text: z.string(),
+});
+
+export const CommonThreadSchema = z.object({
+  luck: z.enum(['Excellent', 'Strong', 'Fair', 'Weak']).default('Fair'),
+  charms: z.array(z.string()).max(3).default([]),
+  watchouts: z.array(z.string()).max(3).default([]),
+});
+
+export const WeavingSchema = z.object({
+  subtitle: z.string().optional().default(''),
+  headline: z.string().optional().default(''),
+  checklist: z.array(ChecklistItemSchema).max(5).default([]),
+});
+
 export const JudgeDailySchema = z.object({
   summary: z.string(),
   oneLiner: z.string(),
   aspectCallouts: z.array(AspectCalloutSchema).default([]),
+  commonThread: CommonThreadSchema.optional(),
+  weaving: WeavingSchema.optional(),
+  quote: z.string().optional().default(''),
 });
 
 // ─── Expert output ────────────────────────────────────────────────────────────
@@ -90,6 +110,8 @@ export const ExpertContentSchema = z.object({
   summary: z.string(),
   oneLiner: z.string(),
   aspectSignals: z.array(AspectSignalSchema).optional().default([]),
+  status: z.enum(['Good', 'Fair', 'Caution']).optional().default('Good'),
+  action: z.string().max(140).optional().default(''),
 });
 
 export const TokenUsageSchema = z.object({
@@ -123,6 +145,9 @@ export const OracleSchema = z.object({
   aspectCallouts: z.array(AspectCalloutSchema).optional().default([]),
   chimers: z.array(TraditionIdSchema).optional().default([]),
   chimerCandidates: z.array(TraditionIdSchema).optional().default([]),
+  commonThread: CommonThreadSchema.optional(),
+  weaving: WeavingSchema.optional(),
+  quote: z.string().optional(),
   durationMs: z.number().optional(),
   usage: TokenUsageSchema.optional(),
   error: z.string().optional(),
@@ -194,6 +219,8 @@ export const ChartDataSchema = z.object({
 
 // ─── Inferred types ───────────────────────────────────────────────────────────
 
+export type CommonThread = z.infer<typeof CommonThreadSchema>;
+export type Weaving = z.infer<typeof WeavingSchema>;
 export type AspectKey = z.infer<typeof AspectKeySchema>;
 export type AspectSignal = z.infer<typeof AspectSignalSchema>;
 export type AspectCallout = z.infer<typeof AspectCalloutSchema>;

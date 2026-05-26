@@ -92,7 +92,7 @@ export async function POST(req: Request) {
       expertEmoji: e.emoji,
       color: e.color,
       textColor: e.textColor,
-      content: { facts: "", analysis: "", summary: "", oneLiner: "", aspectSignals: [] },
+      content: { facts: "", analysis: "", summary: "", oneLiner: "", aspectSignals: [], status: "Fair" as const, action: "" },
       error: r.reason instanceof Error ? r.reason.message : String(r.reason),
     };
   });

@@ -141,7 +141,7 @@ export async function POST(req: Request) {
       expertEmoji: e.emoji,
       color: e.color,
       textColor: e.textColor,
-      content: { facts: "", analysis: "", summary: "", oneLiner: "", aspectSignals: [] },
+      content: { facts: "", analysis: "", summary: "", oneLiner: "", aspectSignals: [], status: "Fair" as const, action: "" },
       error: r.reason instanceof Error ? r.reason.message : String(r.reason),
     };
   });
@@ -197,6 +197,9 @@ export async function POST(req: Request) {
       summary: judgeResult.object.summary,
       oneLiner: judgeResult.object.oneLiner,
       aspectCallouts: judgeResult.object.aspectCallouts ?? [],
+      commonThread: judgeResult.object.commonThread,
+      weaving: judgeResult.object.weaving,
+      quote: judgeResult.object.quote,
       chimers: [],
       chimerCandidates: [],
       durationMs: Date.now() - judgeStart,

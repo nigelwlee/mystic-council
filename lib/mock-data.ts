@@ -14,6 +14,8 @@ export const mockExpertResponses: ExpertReading[] = [
       summary: "You are built for depth, not breadth. The people and projects you choose carefully will reward you enormously. Scattered effort dissipates the very power that makes you formidable.",
       oneLiner: "Your Sun-Pluto intensity is your greatest strength — channel it into one thing at a time and watch it compound.",
       aspectSignals: [],
+      status: "Good" as const,
+      action: "Channel your focus into one project and move it forward today.",
     },
   },
   {
@@ -29,6 +31,8 @@ export const mockExpertResponses: ExpertReading[] = [
       summary: "Do not mistake motion for progress. The Horse wants to gallop; the Water master knows when to wait for the right current. This year calls for selective, deep investment over scattered momentum.",
       oneLiner: "Your Fire Rabbit period opens doors to influence — pick one door and walk all the way through it.",
       aspectSignals: [],
+      status: "Good" as const,
+      action: "Invest deeply in one partnership or project — scatter nothing.",
     },
   },
   {
@@ -44,6 +48,8 @@ export const mockExpertResponses: ExpertReading[] = [
       summary: "You build slowly and lastingly. This is not a time of windfalls — it is a time of compounding. The dharma of your chart is karma yoga: right action without attachment to immediate fruit.",
       oneLiner: "Jupiter-Saturn dasha means every disciplined action now is an investment that pays double in five years.",
       aspectSignals: [],
+      status: "Good" as const,
+      action: "Take one disciplined step on your most important project without expecting immediate results.",
     },
   },
   {
@@ -59,6 +65,8 @@ export const mockExpertResponses: ExpertReading[] = [
       summary: "Something collapsed. You've been rebuilding through patient craft. An unexpected cup is being offered — and this time, you'll have the grounded capacity to receive it.",
       oneLiner: "The Eight of Pentacles is preparing you for the Ace of Cups — keep doing the work and the opening will find you.",
       aspectSignals: [],
+      status: "Fair" as const,
+      action: "Stay with the craft — the opening comes through consistency, not urgency.",
     },
   },
   {
@@ -74,6 +82,8 @@ export const mockExpertResponses: ExpertReading[] = [
       summary: "Your work is to develop the knowledge deeply (7), then find the courage to share it (11), in service of something larger (9). This Personal Year 5 is clearing the way.",
       oneLiner: "You are in a year of necessary recalibration — what shifts now opens the door to deep belonging in your next cycle.",
       aspectSignals: [],
+      status: "Fair" as const,
+      action: "Release one obligation that no longer fits your deeper purpose.",
     },
   },
 ];

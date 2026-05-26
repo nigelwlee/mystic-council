@@ -21,7 +21,7 @@ export function mockDailyReading(date: string): DailyReadingResponse {
       textColor: r.textColor,
       content:
         typeof r.content === "string"
-          ? { facts: "", analysis: "", summary: r.content, oneLiner: r.content, aspectSignals: [] }
+          ? { facts: "", analysis: "", summary: r.content, oneLiner: r.content, aspectSignals: [], status: "Fair" as const, action: "" }
           : r.content,
       durationMs: 400 + Math.floor(Math.random() * 300),
     };
