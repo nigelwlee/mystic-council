@@ -13,6 +13,10 @@ import {
 } from '../../lib/chart-api';
 import type { Database } from '../../lib/database.types';
 import type { MobileChartData, ProfileReading } from '../../lib/chart-api';
+import { C, F } from '../../lib/theme';
+import { LoomBar } from '../../components/primitives/LoomBar';
+import { WarpDivider } from '../../components/primitives/WarpDivider';
+import { SectionLabel } from '../../components/primitives/SectionLabel';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -27,7 +31,6 @@ export default function MeTab() {
   const [streak, setStreak] = useState<{ current: number; longest: number } | null>(null);
   const [originalEmail, setOriginalEmail] = useState('');
 
-  // Editable drafts
   const [draftEmail, setDraftEmail] = useState('');
   const [draftName, setDraftName] = useState('');
   const [draftDate, setDraftDate] = useState('');
@@ -77,7 +80,6 @@ export default function MeTab() {
     setLoading(false);
     setRefreshing(false);
 
-    // Fetch chart + profile if we have birth data + session
     if (birthData?.birthdate && session?.access_token) {
       const bd = {
         name: birthData.name,
@@ -89,7 +91,7 @@ export default function MeTab() {
       };
       setChartLoading(true);
       setChartError(false);
-      fetchChart({ birthData: bd, date: new Date().toLocaleDateString("en-CA"), accessToken: session.access_token })
+      fetchChart({ birthData: bd, date: new Date().toLocaleDateString('en-CA'), accessToken: session.access_token })
         .then((c) => setChart(c))
         .catch(() => setChartError(true))
         .finally(() => setChartLoading(false));
@@ -136,16 +138,13 @@ export default function MeTab() {
             birthdate: draftDate.trim(),
             birthtime: draftTime.trim() || null,
             birthplace: draftPlace.trim(),
-            // Reset coords so /api/daily re-geocodes on next read
             latitude: draftPlace.trim() !== (profile?.birthplace ?? '') ? null : (profile?.latitude ?? null),
             longitude: draftPlace.trim() !== (profile?.birthplace ?? '') ? null : (profile?.longitude ?? null),
           },
           { onConflict: 'user_id' }
         );
         if (error) throw new Error(`Birth data: ${error.message}`);
-        // Invalidate profile reading so it regenerates on next fetch
         setProfileReading(null);
-        // Update local profile copy
         setProfile((prev) => prev ? {
           ...prev,
           name: draftName.trim(),
@@ -156,7 +155,6 @@ export default function MeTab() {
           longitude: draftPlace.trim() !== (profile?.birthplace ?? '') ? null : prev.longitude,
         } : prev);
         if (!hints.length) hints.push('Saved. Generating your readings…');
-        // Await profile generation so the user knows when it's done
         const { data: { session: sess } } = await supabase.auth.getSession();
         if (sess?.access_token) {
           setProfileGenerating(true);
@@ -165,15 +163,8 @@ export default function MeTab() {
             location: draftPlace.trim(), name: draftName.trim(),
           };
           fetchProfile({ birthData: bd, accessToken: sess.access_token, force: true })
-            .then((p) => {
-              setProfileReading(p);
-              setProfileError(false);
-              setHint('Readings updated.');
-            })
-            .catch(() => {
-              setProfileError(true);
-              setHint('Readings could not be generated. Pull down to retry.');
-            })
+            .then((p) => { setProfileReading(p); setProfileError(false); setHint('Readings updated.'); })
+            .catch(() => { setProfileError(true); setHint('Readings could not be generated. Pull down to retry.'); })
             .finally(() => setProfileGenerating(false));
         }
       }
@@ -191,17 +182,14 @@ export default function MeTab() {
   }
 
   const tarotCards = profile?.birthdate ? computeTarotBirthCards(profile.birthdate) : null;
-
   const lat = profile?.latitude;
   const lng = profile?.longitude;
-  const latLngText = lat != null && lng != null
-    ? `${lat.toFixed(4)}, ${lng.toFixed(4)}`
-    : null;
+  const latLngText = lat != null && lng != null ? `${lat.toFixed(4)}, ${lng.toFixed(4)}` : null;
 
   if (loading) {
     return (
       <View style={[styles.container, styles.center]}>
-        <ActivityIndicator color="rgba(191,168,130,1)" />
+        <ActivityIndicator color={C.accent} />
       </View>
     );
   }
@@ -212,74 +200,112 @@ export default function MeTab() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 32 }]}
+        contentContainerStyle={[styles.scroll, { paddingBottom: insets.bottom + 40 }]}
         keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={() => { setRefreshing(true); void load(true); }}
-            tintColor="rgba(191,168,130,0.6)"
+            tintColor={C.accentDim}
           />
         }
       >
         {/* Header */}
-        <View style={[styles.header, { paddingTop: insets.top + 16 }]}>
-          <Text style={styles.headerTitle}>Me</Text>
-        </View>
-
-        {/* Streak */}
-        {streak && (
-          <View style={styles.streakSection}>
-            <Text style={styles.streakNumber}>{streak.current}</Text>
-            <Text style={styles.streakLabel}>day streak</Text>
-            <Text style={styles.streakSub}>Longest: {streak.longest} days</Text>
-          </View>
-        )}
-
-        {/* Account */}
-        <SectionHeader label="Account" />
-        <View style={styles.section}>
-          <EditRow
-            label="Email"
-            value={draftEmail}
-            onChangeText={setDraftEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            placeholder="email@example.com"
-          />
-        </View>
-
-        {/* Birth data */}
-        <SectionHeader label="Birth Data" />
-        <View style={styles.section}>
-          <EditRow label="Name" value={draftName} onChangeText={setDraftName} autoCapitalize="words" placeholder="Full name" />
-          <EditRow
-            label="Born"
-            value={draftDate}
-            onChangeText={setDraftDate}
-            keyboardType="numbers-and-punctuation"
-            placeholder="YYYY-MM-DD"
-          />
-          <EditRow
-            label="Time"
-            value={draftTime}
-            onChangeText={setDraftTime}
-            keyboardType="numbers-and-punctuation"
-            placeholder="HH:MM (24h)"
-          />
-          <EditRow label="Place" value={draftPlace} onChangeText={setDraftPlace} autoCapitalize="words" placeholder="City, Country" />
-          <View style={styles.row}>
-            <Text style={styles.rowLabel}>Lat / Lng</Text>
-            <Text style={[styles.rowValue, !latLngText && styles.rowValueMuted]}>
-              {latLngText ?? 'Computing…'}
-            </Text>
-          </View>
-          {!latLngText && (
-            <Text style={styles.latLngHint}>Updates after your next daily reading.</Text>
+        <View style={[styles.header, { paddingTop: insets.top + 14 }]}>
+          <Text style={styles.headerLabel}>MY PROFILE</Text>
+          {streak && (
+            <View style={styles.headerStreak}>
+              <Text style={styles.headerStreakNum}>{streak.current}</Text>
+              <Text style={styles.headerStreakLabel}> day streak</Text>
+            </View>
           )}
         </View>
 
-        {/* Save feedback */}
+        <LoomBar />
+
+        {/* Display name + longest streak */}
+        <View style={styles.nameSection}>
+          {profile?.name ? (
+            <Text style={styles.displayName}>{profile.name}</Text>
+          ) : (
+            <Text style={styles.displayNameMuted}>Your name</Text>
+          )}
+          {streak && (
+            <Text style={styles.longestStreak}>
+              Longest streak {streak.longest} days
+            </Text>
+          )}
+        </View>
+
+        <WarpDivider />
+
+        {/* Birth data */}
+        <View style={styles.section}>
+          <SectionLabel text="Birth Data" />
+          <ProfileRow label="Name">
+            <TextInput
+              style={styles.profileInput}
+              value={draftName}
+              onChangeText={setDraftName}
+              autoCapitalize="words"
+              placeholder="Full name"
+              placeholderTextColor={C.dimmer}
+            />
+          </ProfileRow>
+          <ProfileRow label="Born">
+            <TextInput
+              style={styles.profileInput}
+              value={draftDate}
+              onChangeText={setDraftDate}
+              keyboardType="numbers-and-punctuation"
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={C.dimmer}
+            />
+          </ProfileRow>
+          <ProfileRow label="Time">
+            <TextInput
+              style={styles.profileInput}
+              value={draftTime}
+              onChangeText={setDraftTime}
+              keyboardType="numbers-and-punctuation"
+              placeholder="HH:MM (24h)"
+              placeholderTextColor={C.dimmer}
+            />
+          </ProfileRow>
+          <ProfileRow label="Place">
+            <TextInput
+              style={styles.profileInput}
+              value={draftPlace}
+              onChangeText={setDraftPlace}
+              autoCapitalize="words"
+              placeholder="City, Country"
+              placeholderTextColor={C.dimmer}
+            />
+          </ProfileRow>
+          <ProfileRow label="Lat / Lng" isLast>
+            <Text style={[styles.profileValue, !latLngText && { color: C.dimmer }]}>
+              {latLngText ?? 'Computing…'}
+            </Text>
+          </ProfileRow>
+        </View>
+
+        {/* Account */}
+        <View style={[styles.section, { marginTop: 24 }]}>
+          <SectionLabel text="Account" />
+          <ProfileRow label="Email" isLast>
+            <TextInput
+              style={styles.profileInput}
+              value={draftEmail}
+              onChangeText={setDraftEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              placeholder="email@example.com"
+              placeholderTextColor={C.dimmer}
+            />
+          </ProfileRow>
+        </View>
+
+        {/* Hint */}
         {!!hint && (
           <Text style={[styles.hint, hint.includes('failed') || hint.includes('Error') ? styles.hintError : styles.hintOk]}>
             {hint}
@@ -294,27 +320,28 @@ export default function MeTab() {
             disabled={saving}
           >
             {saving
-              ? <ActivityIndicator color="#0A0B14" />
-              : <Text style={styles.saveBtnText}>Save Changes</Text>}
+              ? <ActivityIndicator color={C.bg} />
+              : <Text style={styles.saveBtnText}>SAVE CHANGES</Text>}
           </Pressable>
         )}
 
+        <WarpDivider style={{ marginTop: 32 }} />
+
         {/* Charts */}
         {profile?.birthdate && (
-          <>
-            <SectionHeader label="Your Charts" />
+          <View style={styles.section}>
+            <SectionLabel text="Your Charts" />
             {chartLoading && (
               <View style={styles.chartLoading}>
-                <ActivityIndicator color="rgba(191,168,130,0.6)" size="small" />
+                <ActivityIndicator color={C.accentDim} size="small" />
               </View>
             )}
             {chartError && !chartLoading && (
               <Text style={styles.chartError}>Charts unavailable. Pull to refresh.</Text>
             )}
             {chart && !chartLoading && (
-              <View style={styles.section}>
+              <>
                 <ChartRow
-                  emoji="⭐"
                   label="Western Astrology"
                   headline={chart.traditions.western ? westernHeadline(chart.traditions.western) : null}
                   data={chart.traditions.western ?? null}
@@ -323,7 +350,6 @@ export default function MeTab() {
                   fallbackSummary={chart.traditions.western ? westernHeadline(chart.traditions.western) : null}
                 />
                 <ChartRow
-                  emoji="🔱"
                   label="Vedic Jyotish"
                   headline={chart.traditions.vedic ? vedicHeadline(chart.traditions.vedic) : null}
                   data={chart.traditions.vedic ?? null}
@@ -332,7 +358,6 @@ export default function MeTab() {
                   fallbackSummary={chart.traditions.vedic ? vedicHeadline(chart.traditions.vedic) : null}
                 />
                 <ChartRow
-                  emoji="🐉"
                   label="Chinese Astrology"
                   headline={chart.traditions.chinese ? chineseHeadline(chart.traditions.chinese) : null}
                   data={chart.traditions.chinese ?? null}
@@ -341,7 +366,6 @@ export default function MeTab() {
                   fallbackSummary={chart.traditions.chinese ? chineseHeadline(chart.traditions.chinese) : null}
                 />
                 <ChartRow
-                  emoji="🔢"
                   label="Numerology"
                   headline={chart.traditions.numerology ? numerologyHeadline(chart.traditions.numerology) : null}
                   data={chart.traditions.numerology ?? null}
@@ -351,7 +375,6 @@ export default function MeTab() {
                 />
                 {tarotCards && (
                   <ChartRow
-                    emoji="🃏"
                     label="Tarot"
                     headline={tarotHeadline(tarotCards)}
                     data={{
@@ -362,50 +385,33 @@ export default function MeTab() {
                     profileStatus={profileReading?.traditions.tarot?.status ?? (profileGenerating ? 'loading' : undefined)}
                   />
                 )}
-              </View>
+              </>
             )}
-          </>
+          </View>
         )}
+
+        <WarpDivider style={{ marginTop: 32 }} />
 
         {/* Sign out */}
         <Pressable style={styles.signOut} onPress={signOut}>
-          <Text style={styles.signOutText}>Sign Out</Text>
+          <Text style={styles.signOutText}>SIGN OUT</Text>
         </Pressable>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
-function SectionHeader({ label }: { label: string }) {
-  return (
-    <View style={styles.sectionHeader}>
-      <Text style={styles.sectionHeaderText}>{label}</Text>
-    </View>
-  );
-}
-
-interface EditRowProps {
+function ProfileRow({
+  label, children, isLast = false,
+}: {
   label: string;
-  value: string;
-  onChangeText: (v: string) => void;
-  keyboardType?: 'default' | 'email-address' | 'numbers-and-punctuation' | 'numeric';
-  autoCapitalize?: 'none' | 'words' | 'sentences' | 'characters';
-  placeholder?: string;
-}
-
-function EditRow({ label, value, onChangeText, keyboardType = 'default', autoCapitalize = 'none', placeholder }: EditRowProps) {
+  children: React.ReactNode;
+  isLast?: boolean;
+}) {
   return (
-    <View style={styles.row}>
-      <Text style={styles.rowLabel}>{label}</Text>
-      <TextInput
-        style={styles.rowInput}
-        value={value}
-        onChangeText={onChangeText}
-        keyboardType={keyboardType}
-        autoCapitalize={autoCapitalize}
-        placeholder={placeholder}
-        placeholderTextColor="#4B5563"
-      />
+    <View style={[styles.profileRow, !isLast && styles.profileRowBorder]}>
+      <Text style={styles.profileLabel}>{label}</Text>
+      <View style={styles.profileValueWrap}>{children}</View>
     </View>
   );
 }
@@ -439,9 +445,8 @@ function KVList({ data, depth = 0 }: { data: Record<string, unknown>; depth?: nu
 }
 
 function ChartRow({
-  emoji, label, headline, data, atGlance, profileStatus, fallbackSummary,
+  label, headline, data, atGlance, profileStatus, fallbackSummary,
 }: {
-  emoji: string;
   label: string;
   headline: string | null;
   data: Record<string, unknown> | null;
@@ -457,9 +462,7 @@ function ChartRow({
   }
 
   function renderAtGlance() {
-    if (profileStatus === 'loading') {
-      return <Text style={styles.atGlancePending}>Generating your reading…</Text>;
-    }
+    if (profileStatus === 'loading') return <Text style={styles.atGlancePending}>Generating your reading…</Text>;
     if (profileStatus === 'failed') {
       if (fallbackSummary) {
         return (
@@ -471,23 +474,18 @@ function ChartRow({
       }
       return <Text style={styles.atGlancePending}>Couldn't reach this expert. Pull down to retry.</Text>;
     }
-    if (atGlance) {
-      return <Text style={styles.atGlance}>{atGlance}</Text>;
-    }
+    if (atGlance) return <Text style={styles.atGlance}>{atGlance}</Text>;
     return <Text style={styles.atGlancePending}>Your reading is being prepared…</Text>;
   }
 
   return (
     <Pressable onPress={data ? toggle : undefined} style={styles.chartRow}>
       <View style={styles.chartRowHeader}>
-        <View style={styles.chartRowLeft}>
-          <Text style={styles.chartEmoji}>{emoji}</Text>
-          <View>
-            <Text style={styles.chartLabel}>{label.toUpperCase()}</Text>
-            <Text style={[styles.chartHeadline, !headline && styles.chartHeadlineMuted]}>
-              {headline ?? 'No data'}
-            </Text>
-          </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.chartLabel}>{label.toUpperCase()}</Text>
+          <Text style={[styles.chartHeadline, !headline && styles.chartHeadlineMuted]}>
+            {headline ?? 'No data'}
+          </Text>
         </View>
         {data && <Text style={styles.chartToggle}>{open ? '▲' : '▼'}</Text>}
       </View>
@@ -502,121 +500,84 @@ function ChartRow({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0A0B14' },
+  container: { flex: 1, backgroundColor: C.bg },
   center: { justifyContent: 'center', alignItems: 'center' },
   scroll: { flexGrow: 1 },
 
   header: {
     paddingHorizontal: 20,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#2D2F3E',
+    paddingBottom: 14,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
   },
-  headerTitle: { color: '#F5F0E8', fontSize: 22, fontWeight: '300', letterSpacing: 1 },
+  headerLabel: { fontFamily: F.ui, fontSize: 10, letterSpacing: 2, color: C.dim },
+  headerStreak: { flexDirection: 'row', alignItems: 'baseline' },
+  headerStreakNum: { fontFamily: F.display, fontSize: 20, color: C.accent },
+  headerStreakLabel: { fontFamily: F.ui, fontSize: 10, color: C.muted, letterSpacing: 0.5 },
 
-  streakSection: {
-    alignItems: 'center',
-    paddingVertical: 32,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1E2030',
-  },
-  streakNumber: { color: 'rgba(191,168,130,1)', fontSize: 64, fontWeight: '200' },
-  streakLabel: { color: '#F5F0E8', fontSize: 14, letterSpacing: 2, marginTop: -8 },
-  streakSub: { color: '#6B7280', fontSize: 12, marginTop: 8 },
+  nameSection: { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 20 },
+  displayName: { fontFamily: F.display, fontSize: 36, color: C.text, marginBottom: 6 },
+  displayNameMuted: { fontFamily: F.display, fontSize: 36, color: C.dimmer, marginBottom: 6 },
+  longestStreak: { fontFamily: F.ui, fontSize: 11, color: C.dim, letterSpacing: 0.5 },
 
-  sectionHeader: { paddingHorizontal: 20, paddingTop: 24, paddingBottom: 6 },
-  sectionHeaderText: {
-    fontSize: 10,
-    color: 'rgba(191,168,130,0.7)',
-    letterSpacing: 1.5,
-    textTransform: 'uppercase',
-  },
+  section: { paddingHorizontal: 20, marginTop: 20 },
 
-  section: { paddingHorizontal: 20 },
-
-  row: {
+  profileRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 14,
+  },
+  profileRowBorder: {
     borderBottomWidth: 1,
-    borderBottomColor: '#1E2030',
+    borderBottomColor: C.borderSubtle,
+    borderStyle: 'dotted',
   },
-  rowLabel: { color: '#6B7280', fontSize: 13, width: 72 },
-  rowValue: { color: '#F5F0E8', fontSize: 13, flex: 1, textAlign: 'right' },
-  rowValueMuted: { color: '#4B5563' },
-  rowInput: {
-    flex: 1,
-    color: '#F5F0E8',
-    fontSize: 13,
-    textAlign: 'right',
-    paddingVertical: 0,
+  profileLabel: { fontFamily: F.ui, color: C.dim, fontSize: 12, width: 68 },
+  profileValueWrap: { flex: 1, alignItems: 'flex-end' },
+  profileInput: {
+    fontFamily: F.ui, color: C.text, fontSize: 13,
+    textAlign: 'right', paddingVertical: 0, width: '100%',
   },
+  profileValue: { fontFamily: F.ui, color: C.text, fontSize: 13, textAlign: 'right' },
 
-  latLngHint: {
-    color: '#4B5563',
-    fontSize: 11,
-    marginBottom: 8,
-  },
-
-  hint: { marginHorizontal: 20, marginTop: 12, fontSize: 12 },
+  hint: { marginHorizontal: 20, marginTop: 12, fontFamily: F.ui, fontSize: 11 },
   hintOk: { color: 'rgba(191,168,130,0.8)' },
   hintError: { color: '#F87171' },
 
   saveBtn: {
-    marginHorizontal: 20,
-    marginTop: 20,
-    backgroundColor: 'rgba(191,168,130,1)',
-    padding: 14,
-    alignItems: 'center',
+    marginHorizontal: 20, marginTop: 20,
+    backgroundColor: C.accent,
+    padding: 14, alignItems: 'center',
   },
-  saveBtnDisabled: { backgroundColor: 'rgba(191,168,130,0.4)' },
-  saveBtnText: { color: '#0A0B14', fontWeight: '600', fontSize: 14, letterSpacing: 0.5 },
+  saveBtnDisabled: { backgroundColor: C.accentDim },
+  saveBtnText: { fontFamily: F.uiMedium, color: C.bg, fontSize: 11, letterSpacing: 1.8, textTransform: 'uppercase' },
 
   signOut: {
-    margin: 20,
-    marginTop: 24,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#2D2F3E',
+    marginHorizontal: 20, marginTop: 20, marginBottom: 8,
+    paddingVertical: 14,
+    borderWidth: 1, borderColor: C.border,
     alignItems: 'center',
   },
-  signOutText: { color: '#6B7280', fontSize: 13 },
+  signOutText: { fontFamily: F.ui, color: C.dim, fontSize: 11, letterSpacing: 1.8, textTransform: 'uppercase' },
 
-  // Charts
   chartLoading: { paddingVertical: 20, alignItems: 'center' },
-  chartError: { marginHorizontal: 20, color: '#4B5563', fontSize: 12, paddingVertical: 12 },
+  chartError: { fontFamily: F.ui, color: C.dimmer, fontSize: 11, paddingVertical: 12 },
   chartRow: {
-    paddingVertical: 12,
+    paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#1E2030',
+    borderBottomColor: C.borderSubtle,
   },
-  chartRowHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  chartRowLeft: { flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 },
-  chartEmoji: { fontSize: 13 },
-  chartLabel: { color: '#6B7280', fontSize: 11, letterSpacing: 0.5 },
-  chartHeadline: { color: '#F5F0E8', fontSize: 13, marginTop: 2, lineHeight: 18 },
-  chartHeadlineMuted: { color: '#4B5563', fontStyle: 'italic' },
-  chartToggle: { color: '#6B7280', fontSize: 10, paddingTop: 2 },
+  chartRowHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+  chartLabel: { fontFamily: F.ui, color: C.dim, fontSize: 9, letterSpacing: 1.2, marginBottom: 3 },
+  chartHeadline: { fontFamily: F.ui, color: C.text, fontSize: 13, lineHeight: 19 },
+  chartHeadlineMuted: { color: C.dimmer, fontStyle: 'italic' },
+  chartToggle: { fontFamily: F.ui, color: C.dim, fontSize: 9, paddingTop: 2 },
   chartDetail: { marginTop: 10, gap: 4 },
-  atGlance: {
-    color: '#F5F0E8',
-    fontSize: 13,
-    lineHeight: 21,
-    marginBottom: 12,
-    fontStyle: 'italic',
-  },
-  atGlancePending: {
-    color: '#4B5563',
-    fontSize: 12,
-    marginBottom: 10,
-    fontStyle: 'italic',
-  },
+  atGlance: { fontFamily: F.displayItalic, color: C.text, fontSize: 14, lineHeight: 22, marginBottom: 12 },
+  atGlancePending: { fontFamily: F.ui, color: C.dimmer, fontSize: 11, marginBottom: 10, fontStyle: 'italic' },
   kvRow: { flexDirection: 'row', gap: 8 },
-  kvKey: { color: '#6B7280', fontSize: 11, width: 120 },
-  kvVal: { color: '#9CA3AF', fontSize: 11, flex: 1 },
+  kvKey: { fontFamily: F.ui, color: C.dim, fontSize: 11, width: 120 },
+  kvVal: { fontFamily: F.ui, color: C.muted, fontSize: 11, flex: 1 },
 });
