@@ -360,6 +360,7 @@ export default function ReadTab() {
 
           {/* ── Footer ── */}
           <View style={s.footer}>
+            <HatchBg variant="cross" alpha={0.08} />
             <Text style={s.footerQuote}>"{quote}"</Text>
             <Pressable style={s.chatBtn} onPress={() => router.push('/(tabs)/chat')}>
               <Text style={s.chatBtnText}>CHAT WITH PY</Text>
@@ -429,7 +430,7 @@ const s = StyleSheet.create({
   sourceText:     { fontFamily: F.ui, fontSize: 11, color: C.muted, lineHeight: 17 },
 
   // Footer
-  footer:       { padding: 36, paddingBottom: 40, alignItems: 'center' },
+  footer:       { padding: 36, paddingBottom: 40, alignItems: 'center', overflow: 'hidden' },
   footerQuote:  { fontFamily: F.displayItalic, fontSize: 16, color: C.accent, lineHeight: 26, textAlign: 'center', marginBottom: 28 },
   chatBtn:      { width: '100%', backgroundColor: C.accent, paddingVertical: 15, alignItems: 'center' },
   chatBtnText:  { fontFamily: F.uiMedium, fontSize: 11, letterSpacing: 2.0, color: C.bg },

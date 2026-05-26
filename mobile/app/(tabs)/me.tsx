@@ -396,6 +396,14 @@ export default function MeTab() {
         <Pressable style={styles.signOut} onPress={signOut}>
           <Text style={styles.signOutText}>SIGN OUT</Text>
         </Pressable>
+
+        {/* Refer a Friend */}
+        <Pressable
+          style={styles.referBtn}
+          onPress={() => console.log('Refer a Friend — coming soon')}
+        >
+          <Text style={styles.referBtnText}>REFER A FRIEND</Text>
+        </Pressable>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -555,12 +563,20 @@ const styles = StyleSheet.create({
   saveBtnText: { fontFamily: F.uiMedium, color: C.bg, fontSize: 11, letterSpacing: 1.8, textTransform: 'uppercase' },
 
   signOut: {
-    marginHorizontal: 20, marginTop: 20, marginBottom: 8,
+    marginHorizontal: 20, marginTop: 20,
     paddingVertical: 14,
     borderWidth: 1, borderColor: C.border,
     alignItems: 'center',
   },
   signOutText: { fontFamily: F.ui, color: C.dim, fontSize: 11, letterSpacing: 1.8, textTransform: 'uppercase' },
+
+  referBtn: {
+    marginHorizontal: 20, marginTop: 10, marginBottom: 8,
+    paddingVertical: 14,
+    borderWidth: 1, borderColor: C.accentDim,
+    alignItems: 'center',
+  },
+  referBtnText: { fontFamily: F.ui, color: C.accentDim, fontSize: 11, letterSpacing: 1.8, textTransform: 'uppercase' },
 
   chartLoading: { paddingVertical: 20, alignItems: 'center' },
   chartError: { fontFamily: F.ui, color: C.dimmer, fontSize: 11, paddingVertical: 12 },
