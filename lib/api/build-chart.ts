@@ -73,11 +73,10 @@ export async function buildChart(
     drawDailyCards(date, userId),
   ]);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const result: ChartData = {
     id: crypto.randomUUID(),
     generatedAt: new Date().toISOString(),
-    input: { birthData: birthData as any, date },
+    input: { birthData: birthData as ChartData["input"]["birthData"], date },
     traditions: {
       western: western
         ? { ...western, transits: westernTransits }

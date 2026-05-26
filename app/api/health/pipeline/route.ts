@@ -44,6 +44,8 @@ export async function GET(req: Request) {
           summary: typeof r.content === "string" ? r.content : r.content.summary ?? "",
           oneLiner: typeof r.content === "string" ? r.content : r.content.oneLiner ?? "",
           aspectSignals: [],
+          status: "Fair" as const,
+          action: "",
         },
       };
     });
@@ -83,6 +85,8 @@ export async function GET(req: Request) {
         summary: typeof r.content === "string" ? r.content : r.content.summary ?? "",
         oneLiner: typeof r.content === "string" ? r.content : r.content.oneLiner ?? "",
         aspectSignals: [],
+        status: "Fair" as const,
+        action: "",
       },
     };
   });

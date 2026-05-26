@@ -191,6 +191,45 @@ function OracleCard({ oracle }: { oracle: Record<string, unknown> }) {
         <div className="text-xs text-neutral-300 leading-relaxed">
           {oracle.summary as string}
         </div>
+        {!!(oracle.quote as string | undefined) && (
+          <div className="text-[11px] italic text-neutral-500 leading-relaxed border-l-2 border-neutral-700 pl-2">
+            {oracle.quote as string}
+          </div>
+        )}
+        {!!(oracle.commonThread as unknown) && (() => {
+          const ct = oracle.commonThread as { luck?: string; charms?: string[]; watchouts?: string[] };
+          return (
+            <div className="text-[10px] font-mono border border-neutral-800 p-2 space-y-1">
+              <div className="text-neutral-500 uppercase tracking-widest mb-1">Common Thread</div>
+              {ct.luck && <div>luck: <span className="text-amber-400/70">{ct.luck}</span></div>}
+              {ct.charms && ct.charms.length > 0 && (
+                <div className="text-emerald-600">charms: {ct.charms.join(" · ")}</div>
+              )}
+              {ct.watchouts && ct.watchouts.length > 0 && (
+                <div className="text-red-600/70">watchouts: {ct.watchouts.join(" · ")}</div>
+              )}
+            </div>
+          );
+        })()}
+        {!!(oracle.weaving as unknown) && (() => {
+          const w = oracle.weaving as { subtitle?: string; headline?: string; checklist?: { type: string; text: string }[] };
+          return (
+            <div className="text-[10px] font-mono border border-neutral-800 p-2 space-y-1">
+              <div className="text-neutral-500 uppercase tracking-widest mb-1">Weaving</div>
+              {w.subtitle && <div className="text-neutral-400">{w.subtitle}</div>}
+              {w.headline && <div className="text-neutral-200 font-medium">{w.headline}</div>}
+              {w.checklist && w.checklist.length > 0 && (
+                <ul className="space-y-0.5 mt-1">
+                  {w.checklist.map((item, i) => (
+                    <li key={i} className={item.type === "positive" ? "text-emerald-600" : "text-red-600/70"}>
+                      {item.type === "positive" ? "✓" : "⚠"} {item.text}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          );
+        })()}
         {showPrompt && (
           <div className="space-y-2 text-[10px] font-mono pt-2 border-t border-neutral-800">
             {model && (

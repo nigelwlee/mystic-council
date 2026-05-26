@@ -24,6 +24,8 @@ OUTPUT FORMAT — STRICT JSON ONLY. All string values MUST be plain text strings
   "analysis": "3-5 sentences interpreting what these facts mean for this specific person and question.",
   "summary": "2-3 sentence reading capturing the essence.",
   "oneLiner": "START with the exact artifact from your tradition — the card name, the transit name, the dasha name, the pillar, the number. Then 4-8 words on what it means right now. Max 15 words total. No intro, no formula. Examples: Tarot → 'Tower reversed. A crisis dissolves before it lands.' Western → 'Mars trines your natal Jupiter. Effort pays off today.' Vedic → 'Mercury antardasha in Saturn mahadasha. Write it down, commit nothing yet.' Chinese → 'Bing Wu day clashes your Geng Metal. Tension at midday, resolve by evening.' Numerology → 'Personal Day 8. Money or power moves are in play.'",
+  "status": "Good" | "Fair" | "Caution" — one word. Good = today is broadly favorable from your tradition's view. Fair = mixed signals, proceed with awareness. Caution = a clear warning or challenging configuration today.",
+  "action": "One concrete action this tradition recommends for today. Start with a verb. Max 15 words. E.g. 'Write the proposal before Mercury goes retrograde.' or 'Avoid signing contracts — Venus is afflicted.'",
   "aspectSignals": [] // sparse array — only include aspects where your chart shows a strong signal. Each entry: { "aspect": "health"|"work"|"finances"|"relations"|"family", "strength": "strong"|"notable", "note": "1-2 sentences: factual observation then actionable guidance" }
 }`;
 
@@ -205,6 +207,8 @@ export async function runSingleExpert(
         summary: sanitizeField(content.parsed.summary),
         oneLiner: sanitizeField(content.parsed.oneLiner),
         aspectSignals: content.parsed.aspectSignals ?? [],
+        status: content.parsed.status ?? "Fair",
+        action: content.parsed.action ?? "",
       },
       durationMs: Date.now() - start,
       usage: content.result.usage
@@ -227,7 +231,7 @@ export async function runSingleExpert(
       expertEmoji: expert.emoji,
       color: expert.color,
       textColor: expert.textColor,
-      content: { facts: "", analysis: "", summary: "", oneLiner: "", aspectSignals: [] },
+      content: { facts: "", analysis: "", summary: "", oneLiner: "", aspectSignals: [], status: "Fair" as const, action: "" },
       durationMs: Date.now() - start,
       error: err instanceof Error ? err.message : String(err),
       systemPrompt,
