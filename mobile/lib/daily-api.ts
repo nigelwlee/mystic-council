@@ -24,6 +24,8 @@ export interface ExpertContent {
   summary: string;
   oneLiner: string;
   aspectSignals?: AspectSignal[];
+  status?: 'Good' | 'Fair' | 'Caution';
+  action?: string;
 }
 
 export interface ExpertReading {
@@ -38,10 +40,30 @@ export interface ExpertReading {
   error?: string;
 }
 
+export interface CommonThread {
+  luck?: 'Excellent' | 'Strong' | 'Fair' | 'Weak';
+  charms?: string[];
+  watchouts?: string[];
+}
+
+export interface ChecklistItem {
+  type: 'positive' | 'warning';
+  text: string;
+}
+
+export interface Weaving {
+  subtitle?: string;
+  headline?: string;
+  checklist?: ChecklistItem[];
+}
+
 export interface OracleReading {
   summary: string;
   oneLiner: string;
   aspectCallouts: AspectCallout[];
+  commonThread?: CommonThread;
+  weaving?: Weaving;
+  quote?: string;
   durationMs?: number;
   error?: string;
 }

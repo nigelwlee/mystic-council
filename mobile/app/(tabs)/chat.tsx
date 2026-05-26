@@ -19,6 +19,10 @@ import { askCouncil } from '../../lib/chat-api';
 import { pickThree } from '../../lib/chat-prompts';
 import type { ChatExpertReading, ChatOracle } from '../../lib/chat-api';
 import type { Database } from '../../lib/database.types';
+import { C, F } from '../../lib/theme';
+import { TRADITION_LABEL, TRADITION_ORDER } from '../../lib/patterns';
+import { LoomBar } from '../../components/primitives/LoomBar';
+import { HatchBg } from '../../components/primitives/HatchBg';
 
 type BirthDataRow = Database['public']['Tables']['birth_data']['Row'];
 
@@ -27,20 +31,21 @@ if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental
 }
 
 const EXPERT_TRADITION: Record<string, string> = {
-  stella: 'western',
-  priya: 'vedic',
-  'master-wei': 'chinese',
-  'madame-crow': 'tarot',
-  pythia: 'numerology',
+  stella: 'stella',
+  priya: 'priya',
+  'master-wei': 'master-wei',
+  'madame-crow': 'madame-crow',
+  pythia: 'pythia',
 };
 
-const TRADITION_LABEL: Record<string, string> = {
-  western: 'Astrology (Stella)',
-  vedic: 'Vedic (Priya)',
-  chinese: 'Chinese (Master Wei)',
-  tarot: 'Tarot (Madame Crow)',
-  numerology: 'Numerology (Pythia)',
+const EXPERT_INITIAL: Record<string, string> = {
+  stella: 'S',
+  priya: 'P',
+  'master-wei': 'W',
+  'madame-crow': 'M',
+  pythia: 'Py',
 };
+
 
 type UserMsg = { role: 'user'; content: string; createdAt: string };
 type AssistantMsg = {
@@ -76,11 +81,7 @@ function TypingDots() {
     a0.start();
     a1.start();
     a2.start();
-    return () => {
-      a0.stop();
-      a1.stop();
-      a2.stop();
-    };
+    return () => { a0.stop(); a1.stop(); a2.stop(); };
   }, [dot0, dot1, dot2]);
 
   return (
@@ -94,8 +95,9 @@ function TypingDots() {
 
 function ChimerAside({ expert }: { expert: ChatExpertReading }) {
   const [open, setOpen] = useState(false);
-  const trad = EXPERT_TRADITION[expert.expertId] ?? '';
-  const label = TRADITION_LABEL[trad] ?? expert.expertName;
+  const expertId = EXPERT_TRADITION[expert.expertId] ?? expert.expertId;
+  const label = TRADITION_LABEL[expertId] ?? expert.expertName;
+  const initial = EXPERT_INITIAL[expertId] ?? expert.expertName[0];
   const oneLiner = expert.content?.oneLiner ?? expert.error ?? '';
   const summary = expert.content?.summary ?? '';
 
@@ -105,9 +107,12 @@ function ChimerAside({ expert }: { expert: ChatExpertReading }) {
   }
 
   return (
-    <View style={styles.chimerContainer}>
-      <Pressable onPress={toggle} style={styles.chimerHeader}>
-        <Text style={styles.chimerEmoji}>{expert.expertEmoji}</Text>
+    <View style={[styles.chimerContainer, { backgroundColor: C.bg }]}>
+      <Pressable onPress={summary ? toggle : undefined} style={styles.chimerHeader}>
+        {/* Brass-dashed medallion — uniform style matching prototype */}
+        <View style={styles.chimerMedallion}>
+          <Text style={styles.chimerInitial}>{initial}</Text>
+        </View>
         <View style={styles.chimerBody}>
           <Text style={styles.chimerLabel}>{label}</Text>
           {!!oneLiner && <Text style={styles.chimerOneLiner}>{oneLiner}</Text>}
@@ -135,11 +140,18 @@ function MessageBubble({ item, onRetry }: { item: Msg; onRetry?: (q: string) => 
   }
 
   const msg = item as AssistantMsg;
-  const chimers = msg.oracle?.chimers ?? [];
-  const chimerExperts = (msg.experts ?? []).filter((e) => {
-    const trad = EXPERT_TRADITION[e.expertId];
-    return trad && chimers.includes(trad);
-  });
+  // Sort chimers by tradition order
+  const chimerIds: string[] = [];
+  if (msg.oracle?.chimers) {
+    for (const tid of TRADITION_ORDER) {
+      if (msg.oracle.chimers.includes(tid) || msg.oracle.chimers.includes(EXPERT_TRADITION[tid] ?? '')) {
+        chimerIds.push(tid);
+      }
+    }
+  }
+  const chimerExperts = chimerIds
+    .map((tid) => (msg.experts ?? []).find((e) => e.expertId === tid || EXPERT_TRADITION[e.expertId] === tid))
+    .filter((e): e is ChatExpertReading => !!e);
 
   return (
     <View style={styles.assistantBubbleWrap}>
@@ -164,7 +176,7 @@ function MessageBubble({ item, onRetry }: { item: Msg; onRetry?: (q: string) => 
   );
 }
 
-function EmptyStateText() {
+function EmptyState() {
   return (
     <View style={styles.emptyStateWrap}>
       <Text style={styles.emptyStateText}>Ask anything about today.</Text>
@@ -174,7 +186,7 @@ function EmptyStateText() {
 
 export default function ChatTab() {
   const insets = useSafeAreaInsets();
-  const todayISO = useRef(new Date().toLocaleDateString("en-CA")).current; // YYYY-MM-DD in device timezone
+  const todayISO = useRef(new Date().toLocaleDateString('en-CA')).current;
 
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
@@ -189,20 +201,12 @@ export default function ChatTab() {
   useEffect(() => {
     async function init() {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) {
-        setLoading(false);
-        return;
-      }
+      if (!session) { setLoading(false); return; }
       setUserId(session.user.id);
 
       const [{ data: bd }, { data: history }] = await Promise.all([
-        supabase
-          .from('birth_data')
-          .select('*')
-          .eq('user_id', session.user.id)
-          .maybeSingle(),
-        supabase
-          .from('chat_messages')
+        supabase.from('birth_data').select('*').eq('user_id', session.user.id).maybeSingle(),
+        supabase.from('chat_messages')
           .select('role, content, created_at, oracle, experts')
           .eq('user_id', session.user.id)
           .eq('chat_date', todayISO)
@@ -211,19 +215,16 @@ export default function ChatTab() {
 
       if (bd) setBirthData(bd);
       if (history) {
-        setMessages(
-          history.map((row) => ({
-            role: row.role as 'user' | 'assistant',
-            content: row.content,
-            createdAt: row.created_at,
-            ...(row.role === 'assistant' && row.oracle ? { oracle: row.oracle as unknown as ChatOracle } : {}),
-            ...(row.role === 'assistant' && row.experts ? { experts: row.experts as unknown as ChatExpertReading[] } : {}),
-          }))
-        );
+        setMessages(history.map((row) => ({
+          role: row.role as 'user' | 'assistant',
+          content: row.content,
+          createdAt: row.created_at,
+          ...(row.role === 'assistant' && row.oracle ? { oracle: row.oracle as unknown as ChatOracle } : {}),
+          ...(row.role === 'assistant' && row.experts ? { experts: row.experts as unknown as ChatExpertReading[] } : {}),
+        })));
       }
       setLoading(false);
     }
-
     void init();
   }, [todayISO]);
 
@@ -286,18 +287,12 @@ export default function ChatTab() {
           experts: result.experts as any,
         });
       } catch (e) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: 'assistant',
-            content:
-              e instanceof Error
-                ? e.message
-                : 'The council could not be reached. Please try again.',
-            createdAt: new Date().toISOString(),
-            isError: true,
-          },
-        ]);
+        setMessages((prev) => [...prev, {
+          role: 'assistant',
+          content: e instanceof Error ? e.message : 'The council could not be reached. Please try again.',
+          createdAt: new Date().toISOString(),
+          isError: true,
+        }]);
       } finally {
         setPending(false);
       }
@@ -317,9 +312,7 @@ export default function ChatTab() {
     }
   }, [pending]);
 
-  if (loading) {
-    return <View style={styles.container} />;
-  }
+  if (loading) return <View style={styles.container} />;
 
   const showChips = !pending && !input.trim();
 
@@ -329,11 +322,15 @@ export default function ChatTab() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
-        <Text style={styles.headerTitle}>Py</Text>
+      <View style={[styles.header, { paddingTop: insets.top + 14 }]}>
+        <Text style={styles.headerTitle}>CHAT WITH PY</Text>
       </View>
 
-      {/* Message list */}
+      <LoomBar />
+
+      {/* Message list with subtle hatch backdrop */}
+      <View style={styles.listWrapper}>
+        <HatchBg variant="cross" alpha={0.04} />
       <FlatList
         ref={flatListRef}
         data={messages}
@@ -343,17 +340,19 @@ export default function ChatTab() {
           styles.listContent,
           messages.length === 0 && styles.listContentEmpty,
         ]}
-        ListEmptyComponent={<EmptyStateText />}
-        onContentSizeChange={() =>
-          flatListRef.current?.scrollToEnd({ animated: false })
-        }
+        ListEmptyComponent={<EmptyState />}
+        onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
       />
+      </View>
 
       {/* Typing indicator */}
       {pending && <TypingDots />}
 
       {/* Composer */}
       <View style={[styles.composerWrap, { paddingBottom: insets.bottom + 8 }]}>
+        {/* Brass top hairline */}
+        <View style={styles.composerHairline} />
+
         {showChips && (
           <ScrollView
             horizontal
@@ -362,18 +361,11 @@ export default function ChatTab() {
             style={styles.chipsScroll}
           >
             {prompts.map((p) => (
-              <Pressable
-                key={p}
-                onPress={() => void send(p)}
-                style={styles.chip}
-              >
+              <Pressable key={p} onPress={() => void send(p)} style={styles.chip}>
                 <Text style={styles.chipText}>{p}</Text>
               </Pressable>
             ))}
-            <Pressable
-              onPress={() => setPrompts((prev) => pickThree(prev))}
-              style={styles.shuffleBtn}
-            >
+            <Pressable onPress={() => setPrompts((prev) => pickThree(prev))} style={styles.shuffleBtn}>
               <Text style={styles.shuffleText}>↻</Text>
             </Pressable>
           </ScrollView>
@@ -392,20 +384,11 @@ export default function ChatTab() {
             blurOnSubmit={false}
           />
           <Pressable
-            style={[
-              styles.sendBtn,
-              (!input.trim() || pending || !birthData) && styles.sendBtnDisabled,
-            ]}
+            style={[styles.sendBtn, (!input.trim() || pending || !birthData) && styles.sendBtnDisabled]}
             onPress={() => void send(input)}
             disabled={!input.trim() || pending || !birthData}
           >
-            <Text
-              style={[
-                styles.sendBtnText,
-                (!input.trim() || pending || !birthData) &&
-                  styles.sendBtnTextDisabled,
-              ]}
-            >
+            <Text style={[styles.sendBtnText, (!input.trim() || pending || !birthData) && styles.sendBtnTextDisabled]}>
               Send
             </Text>
           </Pressable>
@@ -422,176 +405,125 @@ export default function ChatTab() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0A0B14' },
+  container: { flex: 1, backgroundColor: C.bg },
 
   header: {
-    alignItems: 'center',
+    paddingHorizontal: 20,
     paddingBottom: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#2D2F3E',
-    backgroundColor: '#0A0B14',
+    backgroundColor: C.bg,
+    alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 12,
+    fontFamily: F.ui,
+    fontSize: 10,
     letterSpacing: 2,
-    textTransform: 'uppercase',
-    color: '#6B7280',
-    fontFamily: 'Courier',
+    color: C.dim,
+    textAlign: 'center',
   },
 
+  listWrapper: { flex: 1, overflow: 'hidden' },
   listContent: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
   listContentEmpty: { flexGrow: 1, justifyContent: 'center' },
 
   emptyStateWrap: { alignItems: 'center', paddingVertical: 32 },
   emptyStateText: {
+    fontFamily: F.displayItalic,
     fontSize: 18,
-    fontStyle: 'italic',
     color: 'rgba(245,240,232,0.35)',
-    fontFamily: 'Georgia',
   },
 
   // User bubble
-  userBubbleWrap: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginBottom: 12,
-  },
+  userBubbleWrap: { flexDirection: 'row', justifyContent: 'flex-end', marginBottom: 14 },
   userBubble: {
-    maxWidth: '78%',
-    backgroundColor: 'rgba(245,240,232,0.06)',
-    padding: 12,
+    maxWidth: '76%',
+    backgroundColor: C.bg,
+    borderTopWidth: 1,
+    borderTopColor: C.accentDim,
+    paddingTop: 10,
+    paddingHorizontal: 12,
+    paddingBottom: 10,
   },
 
   // Assistant bubble
   assistantBubbleWrap: { marginBottom: 20 },
   assistantBubble: {
-    maxWidth: '88%',
-    backgroundColor: 'rgba(191,168,130,0.12)',
+    maxWidth: '90%',
+    backgroundColor: C.assistantBubble,
     borderLeftWidth: 2,
-    borderLeftColor: 'rgba(191,168,130,1)',
-    padding: 14,
+    borderLeftColor: C.accent,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
   },
   errorBubble: {
     backgroundColor: 'rgba(248,113,113,0.08)',
     borderLeftColor: '#F87171',
   },
 
-  bubbleText: { fontSize: 15, color: '#F5F0E8', lineHeight: 22 },
+  bubbleText: { fontFamily: F.ui, fontSize: 14, color: C.text, lineHeight: 22 },
   errorText: { color: '#F87171' },
   retryBtn: { marginTop: 8, alignSelf: 'flex-start' },
-  retryText: { fontSize: 13, color: '#F87171', textDecorationLine: 'underline', fontFamily: 'Courier' },
+  retryText: { fontFamily: F.ui, fontSize: 12, color: '#F87171', textDecorationLine: 'underline' },
 
-  // Chimer asides
-  chimersWrap: { maxWidth: '88%', marginTop: 2 },
+  // Chimers
+  chimersWrap: { maxWidth: '90%', marginTop: 1 },
   chimerContainer: {
-    marginTop: 6,
-    paddingLeft: 12,
+    marginTop: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
     borderLeftWidth: 1,
-    borderLeftColor: 'rgba(245,240,232,0.1)',
+    borderLeftColor: C.borderSubtle,
   },
-  chimerHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 6,
+  chimerHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  chimerMedallion: {
+    width: 24, height: 24, borderRadius: 12,
+    borderWidth: 1, borderStyle: 'dashed', borderColor: 'rgba(191,168,130,0.55)',
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: C.bg,
   },
-  chimerEmoji: { fontSize: 12, paddingTop: 1 },
+  chimerInitial: { fontFamily: F.display, fontSize: 10, color: 'rgba(191,168,130,0.85)', lineHeight: 13, includeFontPadding: false },
   chimerBody: { flex: 1 },
-  chimerLabel: {
-    fontSize: 10,
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-    color: '#6B7280',
-    fontFamily: 'Courier',
-    marginBottom: 2,
-  },
-  chimerOneLiner: { fontSize: 13, color: 'rgba(245,240,232,0.35)', lineHeight: 18 },
-  chimerToggle: { fontSize: 10, color: '#6B7280', paddingTop: 1 },
-  chimerSummary: {
-    marginTop: 6,
-    fontSize: 13,
-    color: 'rgba(245,240,232,0.35)',
-    lineHeight: 20,
-  },
+  chimerLabel: { fontFamily: F.ui, fontSize: 9, letterSpacing: 1.2, color: C.dim, textTransform: 'uppercase', marginBottom: 2 },
+  chimerOneLiner: { fontFamily: F.ui, fontSize: 11, color: 'rgba(245,240,232,0.45)', lineHeight: 16 },
+  chimerToggle: { fontFamily: F.ui, fontSize: 9, color: C.dim },
+  chimerSummary: { fontFamily: F.ui, marginTop: 6, fontSize: 12, color: 'rgba(245,240,232,0.45)', lineHeight: 19 },
 
-  // Typing dots
-  typingWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-  },
-  typingDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: 'rgba(191,168,130,1)',
-  },
+  // Typing
+  typingWrap: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 20, paddingVertical: 10 },
+  typingDot: { width: 5, height: 5, borderRadius: 2.5, backgroundColor: C.accent },
 
   // Composer
-  composerWrap: {
-    borderTopWidth: 1,
-    borderTopColor: '#2D2F3E',
-    paddingTop: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#0A0B14',
-  },
+  composerWrap: { paddingTop: 0, paddingHorizontal: 16, backgroundColor: C.bg },
+  composerHairline: { height: 1, backgroundColor: C.accentDim, marginBottom: 12 },
   chipsScroll: { marginBottom: 10 },
   chipsRow: { gap: 6, paddingRight: 4 },
   chip: {
-    borderWidth: 1,
-    borderColor: 'rgba(245,240,232,0.08)',
-    paddingVertical: 6,
-    paddingHorizontal: 10,
+    borderWidth: 1, borderColor: C.borderSubtle,
+    paddingVertical: 6, paddingHorizontal: 10,
   },
-  chipText: {
-    fontSize: 12,
-    color: 'rgba(245,240,232,0.35)',
-    fontFamily: 'Courier',
-  },
+  chipText: { fontFamily: F.ui, fontSize: 11, color: 'rgba(245,240,232,0.4)' },
   shuffleBtn: {
-    borderWidth: 1,
-    borderColor: 'rgba(245,240,232,0.08)',
-    paddingVertical: 6,
-    paddingHorizontal: 10,
+    borderWidth: 1, borderColor: C.borderSubtle,
+    paddingVertical: 6, paddingHorizontal: 10,
   },
-  shuffleText: { fontSize: 14, color: 'rgba(245,240,232,0.35)', fontFamily: 'Courier' },
+  shuffleText: { fontFamily: F.ui, fontSize: 13, color: 'rgba(245,240,232,0.4)' },
 
   inputRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
   textInput: {
-    flex: 1,
-    backgroundColor: '#13141F',
-    borderWidth: 1,
-    borderColor: '#2D2F3E',
-    color: '#F5F0E8',
-    fontSize: 15,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    maxHeight: 96,
-    textAlignVertical: 'top',
+    flex: 1, backgroundColor: C.surface,
+    borderWidth: 1, borderColor: C.border,
+    color: C.text, fontFamily: F.ui, fontSize: 14,
+    paddingHorizontal: 12, paddingVertical: 10,
+    maxHeight: 96, textAlignVertical: 'top',
   },
   sendBtn: {
-    backgroundColor: 'rgba(191,168,130,1)',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: C.bg,
+    borderBottomWidth: 1, borderBottomColor: C.accent,
+    paddingHorizontal: 16, paddingVertical: 12,
+    alignItems: 'center', justifyContent: 'center',
   },
-  sendBtnDisabled: { backgroundColor: 'rgba(191,168,130,0.2)' },
-  sendBtnText: {
-    color: '#0A0B14',
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-    fontFamily: 'Courier',
-  },
-  sendBtnTextDisabled: { color: 'rgba(10,11,20,0.35)' },
+  sendBtnDisabled: { borderBottomColor: C.dimmer },
+  sendBtnText: { fontFamily: F.uiMedium, color: C.accent, fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase' },
+  sendBtnTextDisabled: { color: C.dimmer },
 
-  noBirthHint: {
-    marginTop: 8,
-    fontSize: 12,
-    color: '#6B7280',
-    textAlign: 'center',
-  },
+  noBirthHint: { marginTop: 8, fontFamily: F.ui, fontSize: 11, color: C.dim, textAlign: 'center' },
 });
