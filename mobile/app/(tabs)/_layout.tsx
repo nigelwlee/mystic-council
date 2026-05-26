@@ -1,51 +1,39 @@
 import { Tabs } from 'expo-router';
-import { Text } from 'react-native';
-
-function TabIcon({ label, focused }: { label: string; focused: boolean }) {
-  return (
-    <Text style={{ color: focused ? 'rgba(191,168,130,1)' : '#6B7280', fontSize: 11, marginTop: 2 }}>
-      {label}
-    </Text>
-  );
-}
+import { C, F } from '../../lib/theme';
 
 export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarStyle: {
-          backgroundColor: '#0A0B14',
-          borderTopColor: '#2D2F3E',
-          borderTopWidth: 1,
-        },
-        tabBarActiveTintColor: 'rgba(191,168,130,1)',
-        tabBarInactiveTintColor: '#6B7280',
         tabBarShowLabel: true,
-        tabBarLabelStyle: { fontSize: 11 },
+        tabBarIcon: () => null,
+        tabBarIconStyle: { display: 'none', width: 0, height: 0 },
+        tabBarStyle: {
+          backgroundColor: C.bg,
+          borderTopWidth: 1,
+          borderTopColor: C.accentDim,
+          elevation: 0,
+          shadowOpacity: 0,
+        },
+        tabBarItemStyle: {
+          paddingTop: 10,
+          paddingBottom: 4,
+        },
+        tabBarActiveTintColor: C.accent,
+        tabBarInactiveTintColor: C.dim,
+        tabBarLabelStyle: {
+          fontFamily: F.ui,
+          fontSize: 9,
+          letterSpacing: 1.8,
+          textTransform: 'uppercase',
+          marginTop: 0,
+        },
       }}
     >
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Read',
-          tabBarIcon: ({ focused }) => <TabIcon label="✦" focused={focused} />,
-        }}
-      />
-      <Tabs.Screen
-        name="chat"
-        options={{
-          title: 'Chat',
-          tabBarIcon: ({ focused }) => <TabIcon label="◎" focused={focused} />,
-        }}
-      />
-      <Tabs.Screen
-        name="me"
-        options={{
-          title: 'Me',
-          tabBarIcon: ({ focused }) => <TabIcon label="◇" focused={focused} />,
-        }}
-      />
+      <Tabs.Screen name="index" options={{ title: 'Read' }} />
+      <Tabs.Screen name="chat"  options={{ title: 'Py' }} />
+      <Tabs.Screen name="me"    options={{ title: 'Me' }} />
     </Tabs>
   );
 }

@@ -1,6 +1,7 @@
 import 'react-native-url-polyfill/auto';
 import * as SecureStore from 'expo-secure-store';
 import { createClient } from '@supabase/supabase-js';
+import { AppState } from 'react-native';
 import type { Database } from './database.types';
 
 const ExpoSecureStoreAdapter = {
@@ -21,3 +22,14 @@ export const supabase = createClient<Database>(
     },
   }
 );
+
+// Keep the access token fresh when the app returns to foreground.
+// Without this, the auto-refresh timer stalls while backgrounded and the
+// cached refresh token is often rotated by the time the app resumes.
+AppState.addEventListener('change', (state) => {
+  if (state === 'active') {
+    supabase.auth.startAutoRefresh();
+  } else {
+    supabase.auth.stopAutoRefresh();
+  }
+});
