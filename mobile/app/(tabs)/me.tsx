@@ -17,6 +17,8 @@ import { C, F } from '../../lib/theme';
 import { LoomBar } from '../../components/primitives/LoomBar';
 import { WarpDivider } from '../../components/primitives/WarpDivider';
 import { SectionLabel } from '../../components/primitives/SectionLabel';
+import { TapestryGrid } from '../../components/primitives/TapestryGrid';
+import { fetchTapestry, monthBounds, isoDate, type EngagementLevel } from '../../lib/tapestry-api';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -50,6 +52,13 @@ export default function MeTab() {
   const [profileGenerating, setProfileGenerating] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
+  const [activeTab, setActiveTab] = useState<'tapestry' | 'profile'>('tapestry');
+  const [tapestryNow, setTapestryNow] = useState<Record<string, EngagementLevel>>({});
+  const [tapestryPrev, setTapestryPrev] = useState<Record<string, EngagementLevel>>({});
+  const todayISO = new Date().toLocaleDateString('en-CA');
+  const nowMonth = new Date();
+  const prevMonth = new Date(nowMonth.getFullYear(), nowMonth.getMonth() - 1, 1);
+
   const load = useCallback(async (isPullRefresh = false) => {
     if (!isPullRefresh) setLoading(true);
     const [
@@ -79,6 +88,17 @@ export default function MeTab() {
     setDraftEmail(email);
     setLoading(false);
     setRefreshing(false);
+
+    // Tapestry engagement data
+    if (session?.user.id) {
+      const uid = session.user.id;
+      const nowBounds = monthBounds(nowMonth);
+      const prevBounds = monthBounds(prevMonth);
+      void Promise.all([
+        fetchTapestry(uid, nowBounds.fromDate, nowBounds.toDate),
+        fetchTapestry(uid, prevBounds.fromDate, prevBounds.toDate),
+      ]).then(([now, prev]) => { setTapestryNow(now); setTapestryPrev(prev); });
+    }
 
     if (birthData?.birthdate && session?.access_token) {
       const bd = {
@@ -212,7 +232,7 @@ export default function MeTab() {
       >
         {/* Header */}
         <View style={[styles.header, { paddingTop: insets.top + 14 }]}>
-          <Text style={styles.headerLabel}>MY PROFILE</Text>
+          <Text style={styles.headerLabel}>{activeTab === 'tapestry' ? 'MY TAPESTRY' : 'MY PROFILE'}</Text>
           {streak && (
             <View style={styles.headerStreak}>
               <Text style={styles.headerStreakNum}>{streak.current}</Text>
@@ -237,7 +257,39 @@ export default function MeTab() {
           )}
         </View>
 
+        {/* Tapestry · Profile tab strip */}
+        <View style={styles.tabStrip}>
+          {(['tapestry', 'profile'] as const).map((tab) => (
+            <Pressable
+              key={tab}
+              style={[styles.tabItem, activeTab === tab && styles.tabItemActive]}
+              onPress={() => setActiveTab(tab)}
+            >
+              <Text style={[styles.tabItemText, activeTab === tab && styles.tabItemTextActive]}>
+                {tab === 'tapestry' ? 'Tapestry' : 'Profile'}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
         <WarpDivider />
+
+        {/* Tapestry view */}
+        {activeTab === 'tapestry' && (
+          <View style={[styles.section, { marginTop: 24 }]}>
+            <TapestryGrid month={nowMonth} data={tapestryNow} todayISO={todayISO} />
+            <TapestryGrid month={prevMonth} data={tapestryPrev} todayISO={todayISO} />
+            <Pressable
+              style={styles.shareBtn}
+              onPress={() => console.log('Share Tapestry — coming soon')}
+            >
+              <Text style={styles.shareBtnText}>SHARE TAPESTRY</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {/* Profile view */}
+        {activeTab === 'profile' && <>
 
         {/* Birth data */}
         <View style={styles.section}>
@@ -404,6 +456,8 @@ export default function MeTab() {
         >
           <Text style={styles.referBtnText}>REFER A FRIEND</Text>
         </Pressable>
+
+        </>}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -528,6 +582,26 @@ const styles = StyleSheet.create({
   displayName: { fontFamily: F.display, fontSize: 36, color: C.text, marginBottom: 6 },
   displayNameMuted: { fontFamily: F.display, fontSize: 36, color: C.dimmer, marginBottom: 6 },
   longestStreak: { fontFamily: F.ui, fontSize: 11, color: C.dim, letterSpacing: 0.5 },
+
+  // Tapestry / Profile tab strip
+  tabStrip: { flexDirection: 'row', paddingHorizontal: 20, paddingVertical: 16, gap: 8 },
+  tabItem: {
+    flex: 1, paddingVertical: 8,
+    borderWidth: 1, borderColor: C.border,
+    alignItems: 'center',
+  },
+  tabItemActive: { borderColor: C.accentDim },
+  tabItemText: { fontFamily: F.ui, fontSize: 10, letterSpacing: 1.4, color: C.dim, textTransform: 'uppercase' },
+  tabItemTextActive: { color: C.accent },
+
+  // SHARE TAPESTRY
+  shareBtn: {
+    marginTop: 8, marginBottom: 4,
+    paddingVertical: 14,
+    borderWidth: 1, borderColor: C.accentDim,
+    alignItems: 'center',
+  },
+  shareBtnText: { fontFamily: F.ui, color: C.accentDim, fontSize: 11, letterSpacing: 1.8, textTransform: 'uppercase' },
 
   section: { paddingHorizontal: 20, marginTop: 20 },
 
