@@ -19,9 +19,10 @@ import { askCouncil } from '../../lib/chat-api';
 import { pickThree } from '../../lib/chat-prompts';
 import type { ChatExpertReading, ChatOracle } from '../../lib/chat-api';
 import type { Database } from '../../lib/database.types';
-import { C, F, TRADITION_COLOR } from '../../lib/theme';
+import { C, F } from '../../lib/theme';
 import { TRADITION_LABEL, TRADITION_ORDER } from '../../lib/patterns';
 import { LoomBar } from '../../components/primitives/LoomBar';
+import { HatchBg } from '../../components/primitives/HatchBg';
 
 type BirthDataRow = Database['public']['Tables']['birth_data']['Row'];
 
@@ -44,6 +45,7 @@ const EXPERT_INITIAL: Record<string, string> = {
   'madame-crow': 'M',
   pythia: 'Py',
 };
+
 
 type UserMsg = { role: 'user'; content: string; createdAt: string };
 type AssistantMsg = {
@@ -96,7 +98,6 @@ function ChimerAside({ expert }: { expert: ChatExpertReading }) {
   const expertId = EXPERT_TRADITION[expert.expertId] ?? expert.expertId;
   const label = TRADITION_LABEL[expertId] ?? expert.expertName;
   const initial = EXPERT_INITIAL[expertId] ?? expert.expertName[0];
-  const color = TRADITION_COLOR[expertId] ?? C.accent;
   const oneLiner = expert.content?.oneLiner ?? expert.error ?? '';
   const summary = expert.content?.summary ?? '';
 
@@ -108,9 +109,9 @@ function ChimerAside({ expert }: { expert: ChatExpertReading }) {
   return (
     <View style={[styles.chimerContainer, { backgroundColor: C.bg }]}>
       <Pressable onPress={summary ? toggle : undefined} style={styles.chimerHeader}>
-        {/* Tradition medallion */}
-        <View style={[styles.chimerMedallion, { borderColor: color }]}>
-          <Text style={[styles.chimerInitial, { color }]}>{initial}</Text>
+        {/* Brass-dashed medallion — uniform style matching prototype */}
+        <View style={styles.chimerMedallion}>
+          <Text style={styles.chimerInitial}>{initial}</Text>
         </View>
         <View style={styles.chimerBody}>
           <Text style={styles.chimerLabel}>{label}</Text>
@@ -327,7 +328,9 @@ export default function ChatTab() {
 
       <LoomBar />
 
-      {/* Message list */}
+      {/* Message list with subtle hatch backdrop */}
+      <View style={styles.listWrapper}>
+        <HatchBg variant="cross" alpha={0.04} />
       <FlatList
         ref={flatListRef}
         data={messages}
@@ -340,6 +343,7 @@ export default function ChatTab() {
         ListEmptyComponent={<EmptyState />}
         onContentSizeChange={() => flatListRef.current?.scrollToEnd({ animated: false })}
       />
+      </View>
 
       {/* Typing indicator */}
       {pending && <TypingDots />}
@@ -407,14 +411,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 14,
     backgroundColor: C.bg,
+    alignItems: 'center',
   },
   headerTitle: {
     fontFamily: F.ui,
     fontSize: 10,
     letterSpacing: 2,
     color: C.dim,
+    textAlign: 'center',
   },
 
+  listWrapper: { flex: 1, overflow: 'hidden' },
   listContent: { paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
   listContentEmpty: { flexGrow: 1, justifyContent: 'center' },
 
@@ -469,11 +476,11 @@ const styles = StyleSheet.create({
   chimerHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   chimerMedallion: {
     width: 24, height: 24, borderRadius: 12,
-    borderWidth: 1, borderStyle: 'dashed',
+    borderWidth: 1, borderStyle: 'dashed', borderColor: 'rgba(191,168,130,0.55)',
     alignItems: 'center', justifyContent: 'center',
     backgroundColor: C.bg,
   },
-  chimerInitial: { fontFamily: F.display, fontSize: 10, lineHeight: 13, includeFontPadding: false },
+  chimerInitial: { fontFamily: F.display, fontSize: 10, color: 'rgba(191,168,130,0.85)', lineHeight: 13, includeFontPadding: false },
   chimerBody: { flex: 1 },
   chimerLabel: { fontFamily: F.ui, fontSize: 9, letterSpacing: 1.2, color: C.dim, textTransform: 'uppercase', marginBottom: 2 },
   chimerOneLiner: { fontFamily: F.ui, fontSize: 11, color: 'rgba(245,240,232,0.45)', lineHeight: 16 },
