@@ -1,11 +1,14 @@
 import { useEffect } from 'react';
-import { Stack, router } from 'expo-router';
+import { Stack, router, SplashScreen } from 'expo-router';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { useFonts } from 'expo-font';
 import { supabase } from '../lib/supabase';
 import type { Session } from '@supabase/supabase-js';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { recovery } from '../lib/recovery';
 import { triggerDailyGeneration, clearDailyCache } from '../lib/daily-api';
+
+SplashScreen.preventAutoHideAsync();
 
 
 async function resolveRoute(s: Session | null) {
@@ -20,6 +23,18 @@ async function resolveRoute(s: Session | null) {
 }
 
 export default function RootLayout() {
+  const [fontsLoaded] = useFonts({
+    'CormorantGaramond-Regular': require('../assets/fonts/CormorantGaramond-Regular.ttf'),
+    'CormorantGaramond-Italic':  require('../assets/fonts/CormorantGaramond-Italic.ttf'),
+    'Geist-Regular':             require('../assets/fonts/Geist-Regular.ttf'),
+    'Geist-Medium':              require('../assets/fonts/Geist-Medium.ttf'),
+    'GeistMono-Regular':         require('../assets/fonts/GeistMono-Regular.ttf'),
+  });
+
+  useEffect(() => {
+    if (fontsLoaded) SplashScreen.hideAsync();
+  }, [fontsLoaded]);
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       resolveRoute(session);
@@ -35,6 +50,8 @@ export default function RootLayout() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  if (!fontsLoaded) return null;
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
