@@ -265,7 +265,7 @@ export default function ReadTab() {
                 );
               })()}
               <View style={s.cardDivider} />
-              <ScrollView style={{ flex: 1 }} contentContainerStyle={s.modalBody}>
+              <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={s.modalBody}>
                 {!!selectedExpert.content.oneLiner && (
                   <View style={s.modalSection}>
                     <SectionLabel text="Today's signal" />
