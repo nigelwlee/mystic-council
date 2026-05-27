@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import {
-  View, Text, ScrollView, Pressable, ActivityIndicator,
+  View, Text, ScrollView, Pressable, ActivityIndicator, Modal,
   StyleSheet, RefreshControl, useWindowDimensions,
 } from 'react-native';
 import { router } from 'expo-router';
@@ -49,7 +49,7 @@ const CARD_W = 220;
 const CARD_H = 300;
 const CARD_GAP = 12;
 
-function ExpertCard({ expert }: { expert: ExpertReading }) {
+function ExpertCard({ expert, onPress }: { expert: ExpertReading; onPress?: () => void }) {
   const pattern = EXPERT_PATTERN[expert.expertId] ?? 'cross';
   const status = expert.error ? 'Caution' : (expert.content.status ?? 'Good');
   const statusColor = STATUS_COLOR[status];
@@ -57,7 +57,12 @@ function ExpertCard({ expert }: { expert: ExpertReading }) {
   const tradLabel = TRADITION_LABEL[expert.expertId] ?? expert.expertId.toUpperCase();
 
   return (
-    <View style={[s.card, { width: CARD_W, height: CARD_H }]}>
+    <Pressable
+      style={[s.card, { width: CARD_W, height: CARD_H }]}
+      onPress={onPress}
+      accessibilityRole="button"
+      hitSlop={6}
+    >
       {/* Hero zone */}
       <View style={s.cardHero}>
         <HatchBg variant={pattern} alpha={0.22} />
@@ -70,12 +75,11 @@ function ExpertCard({ expert }: { expert: ExpertReading }) {
 
       <View style={s.cardDivider} />
 
-      {/* Content zone */}
+      {/* Content zone — action only; tap to open full reading modal */}
       <View style={s.cardContent}>
-        <Text style={s.cardOneLiner}>{expert.content.oneLiner}</Text>
-        <Text style={s.cardAction}>{action}</Text>
+        <Text style={s.cardAction} numberOfLines={4} ellipsizeMode="tail">{action}</Text>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
@@ -135,13 +139,14 @@ function AspectExplorer({ reading }: { reading: DailyReadingResponse }) {
 
 export default function ReadTab() {
   const insets = useSafeAreaInsets();
-  const { width: screenW } = useWindowDimensions();
+  const { height: screenH } = useWindowDimensions();
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [reading, setReading] = useState<DailyReadingResponse | null>(null);
   const [streak, setStreak] = useState(0);
   const [error, setError] = useState('');
   const [cardIndex, setCardIndex] = useState(0);
+  const [selectedExpert, setSelectedExpert] = useState<ExpertReading | null>(null);
   const cardScrollRef = useRef<ScrollView>(null);
 
   const todayDate = new Date().toLocaleDateString('en-CA');
@@ -229,6 +234,77 @@ export default function ReadTab() {
         <Text style={s.error}>{error}</Text>
       )}
 
+      {/* ── Expert detail modal ── */}
+      {selectedExpert && (
+        <Modal
+          animationType="fade"
+          transparent
+          visible
+          statusBarTranslucent
+          onRequestClose={() => setSelectedExpert(null)}
+        >
+          <Pressable style={s.modalBackdrop} onPress={() => setSelectedExpert(null)}>
+            <Pressable style={[s.modalSheet, { maxHeight: screenH * 0.82 }]} onPress={() => {}}>
+              {(() => {
+                const st = selectedExpert.error ? 'Caution' : (selectedExpert.content.status ?? 'Good');
+                const stColor = STATUS_COLOR[st] ?? C.muted;
+                const tradLabel = TRADITION_LABEL[selectedExpert.expertId] ?? selectedExpert.expertId.toUpperCase();
+                const pattern = EXPERT_PATTERN[selectedExpert.expertId] ?? 'cross';
+                return (
+                  <View style={s.modalHeader}>
+                    <HatchBg variant={pattern} alpha={0.12} />
+                    <Medallion initial={selectedExpert.expertEmoji} size={48} />
+                    <Text style={s.modalName}>{selectedExpert.expertName}</Text>
+                    <Text style={s.cardTradLabel}>{tradLabel}</Text>
+                    <View style={[s.cardBadge, { borderColor: stColor + '60' }]}>
+                      <Text style={[s.cardBadgeText, { color: stColor }]}>{st}</Text>
+                    </View>
+                  </View>
+                );
+              })()}
+              <View style={s.cardDivider} />
+              <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={s.modalBody}>
+                {!!selectedExpert.content.oneLiner && (
+                  <View style={s.modalSection}>
+                    <SectionLabel text="Today's signal" />
+                    <Text style={s.modalBodyText}>{selectedExpert.content.oneLiner}</Text>
+                  </View>
+                )}
+                {!!selectedExpert.content.action && (
+                  <View style={s.modalSection}>
+                    <SectionLabel text="Your action" />
+                    <Text style={s.modalBodyText}>{selectedExpert.content.action}</Text>
+                  </View>
+                )}
+                {!!selectedExpert.content.summary && (
+                  <View style={s.modalSection}>
+                    <SectionLabel text="Summary" />
+                    <Text style={s.modalBodyText}>{selectedExpert.content.summary}</Text>
+                  </View>
+                )}
+                {!!selectedExpert.content.analysis && (
+                  <View style={s.modalSection}>
+                    <SectionLabel text="Analysis" />
+                    <Text style={[s.modalBodyText, { color: C.muted }]}>{selectedExpert.content.analysis}</Text>
+                  </View>
+                )}
+                {!!selectedExpert.content.facts && (
+                  <View style={s.modalSection}>
+                    <SectionLabel text="Chart facts" />
+                    <Text style={[s.modalBodyText, { color: C.dim, fontSize: 11 }]}>{selectedExpert.content.facts}</Text>
+                  </View>
+                )}
+              </ScrollView>
+              <View style={s.modalFooter}>
+                <Pressable style={s.closeBtn} onPress={() => setSelectedExpert(null)}>
+                  <Text style={s.closeBtnText}>CLOSE</Text>
+                </Pressable>
+              </View>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      )}
+
       {reading && (
         <ScrollView
           contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}
@@ -310,7 +386,7 @@ export default function ReadTab() {
               scrollEventThrottle={16}
             >
               {sortedExperts.map(expert => (
-                <ExpertCard key={expert.expertId} expert={expert} />
+                <ExpertCard key={expert.expertId} expert={expert} onPress={() => setSelectedExpert(expert)} />
               ))}
             </ScrollView>
 
@@ -392,9 +468,20 @@ const s = StyleSheet.create({
   cardBadge:  { borderWidth: 1, paddingHorizontal: 10, paddingVertical: 2, backgroundColor: C.bg },
   cardBadgeText: { fontFamily: F.ui, fontSize: 8, letterSpacing: 1.2 },
   cardDivider: { height: 1, backgroundColor: 'rgba(245,240,232,0.1)' },
-  cardContent: { flex: 1, padding: 18, gap: 8, backgroundColor: C.bg },
-  cardOneLiner:{ fontFamily: F.display, fontSize: 17, color: C.text, lineHeight: 23 },
-  cardAction:  { fontFamily: F.ui, fontSize: 11, color: C.muted, lineHeight: 17 },
+  cardContent: { flex: 1, padding: 18, justifyContent: 'center', backgroundColor: C.bg },
+  cardAction:  { fontFamily: F.ui, fontSize: 13, color: C.text, lineHeight: 19 },
+
+  // Expert detail modal
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  modalSheet:    { width: '100%', maxWidth: 360, backgroundColor: C.bg, borderWidth: 1, borderColor: C.accentDim, overflow: 'hidden' },
+  modalHeader:   { alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 28, overflow: 'hidden', position: 'relative' },
+  modalName:     { fontFamily: F.display, fontSize: 20, color: C.text },
+  modalBody:     { padding: 20, gap: 20 },
+  modalSection:  { gap: 6 },
+  modalBodyText: { fontFamily: F.ui, fontSize: 13, color: C.text, lineHeight: 20 },
+  modalFooter:   { padding: 16, borderTopWidth: 1, borderTopColor: 'rgba(245,240,232,0.08)', alignItems: 'flex-end' },
+  closeBtn:      { borderWidth: 1, borderColor: C.accentDim, paddingHorizontal: 18, paddingVertical: 8 },
+  closeBtnText:  { fontFamily: F.uiMedium, fontSize: 10, letterSpacing: 1.8, color: C.accent },
 
   dots: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, marginTop: 14, paddingHorizontal: 20 },
   dot:  { height: 5 },
