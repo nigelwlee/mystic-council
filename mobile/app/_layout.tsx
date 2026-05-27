@@ -7,6 +7,7 @@ import type { Session } from '@supabase/supabase-js';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { recovery } from '../lib/recovery';
 import { triggerDailyGeneration, clearDailyCache } from '../lib/daily-api';
+import { registerForPushNotifications } from '../lib/push';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -38,13 +39,19 @@ export default function RootLayout() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       resolveRoute(session);
-      if (session && !recovery.active) triggerDailyGeneration();
+      if (session && !recovery.active) {
+        triggerDailyGeneration();
+        void registerForPushNotifications(session.user.id).catch(() => {});
+      }
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (recovery.active) return;
       resolveRoute(session);
-      if (event === 'SIGNED_IN' && session) triggerDailyGeneration();
+      if (event === 'SIGNED_IN' && session) {
+        triggerDailyGeneration();
+        void registerForPushNotifications(session.user.id).catch(() => {});
+      }
       if (event === 'SIGNED_OUT') clearDailyCache();
     });
 

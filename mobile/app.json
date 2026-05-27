@@ -15,8 +15,13 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      "expo-font"
+      "expo-font",
+      "expo-notifications"
     ],
+    "notifications": {
+      "icon": "./assets/images/icon.png",
+      "color": "#BFA882"
+    },
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
