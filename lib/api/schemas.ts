@@ -88,9 +88,9 @@ export const CommonThreadSchema = z.object({
 });
 
 export const WeavingSchema = z.object({
-  subtitle: z.string().optional().default(''),
-  headline: z.string().optional().default(''),
-  checklist: z.array(ChecklistItemSchema).max(5).default([]),
+  subtitle: z.string().optional().default('').describe('3-6 word label for the day\'s dominant theme'),
+  headline: z.string().max(60).optional().default('').describe('Short luck verdict for the day, 3-8 words, no period, no colon — distinct from oneLiner'),
+  checklist: z.array(ChecklistItemSchema).max(5).default([]).describe('Up to 5 positive/warning action items, 8-12 words each'),
 });
 
 export const JudgeDailySchema = z.object({
