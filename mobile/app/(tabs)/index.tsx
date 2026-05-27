@@ -194,7 +194,7 @@ export default function ReadTab() {
   async function onRefresh() {
     if (loading) return;
     setRefreshing(true);
-    await fetchReading();
+    await fetchReading(true);
     setRefreshing(false);
   }
 
