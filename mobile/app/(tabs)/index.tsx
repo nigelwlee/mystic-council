@@ -210,7 +210,7 @@ export default function ReadTab() {
   const watchouts = reading?.oracle.commonThread?.watchouts ?? [];
   const checklist: ChecklistItem[] = reading?.oracle.weaving?.checklist ?? [];
   const weavingSubtitle = reading?.oracle.weaving?.subtitle ?? 'Most of the council agrees';
-  const weavingHeadline = reading?.oracle.weaving?.headline ?? reading?.oracle.oneLiner ?? '';
+  const weavingHeadline = reading?.oracle.weaving?.headline ?? '';
   const quote = reading?.oracle.quote ?? '';
 
   return (
@@ -244,7 +244,7 @@ export default function ReadTab() {
           onRequestClose={() => setSelectedExpert(null)}
         >
           <Pressable style={s.modalBackdrop} onPress={() => setSelectedExpert(null)}>
-            <Pressable style={[s.modalSheet, { maxHeight: screenH * 0.82 }]} onPress={() => {}}>
+            <View style={[s.modalSheet, { maxHeight: screenH * 0.82 }]}>
               {(() => {
                 const st = selectedExpert.error ? 'Caution' : (selectedExpert.content.status ?? 'Good');
                 const stColor = STATUS_COLOR[st] ?? C.muted;
@@ -300,7 +300,7 @@ export default function ReadTab() {
                   <Text style={s.closeBtnText}>CLOSE</Text>
                 </Pressable>
               </View>
-            </Pressable>
+            </View>
           </Pressable>
         </Modal>
       )}
