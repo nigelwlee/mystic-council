@@ -243,7 +243,9 @@ export default function ReadTab() {
           statusBarTranslucent
           onRequestClose={() => setSelectedExpert(null)}
         >
-          <Pressable style={s.modalBackdrop} onPress={() => setSelectedExpert(null)}>
+          <View style={s.modalRoot}>
+            {/* Backdrop sits behind the sheet; absoluteFill means taps outside the sheet dismiss it */}
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setSelectedExpert(null)} />
             <View style={[s.modalSheet, { maxHeight: screenH * 0.82 }]}>
               {(() => {
                 const st = selectedExpert.error ? 'Caution' : (selectedExpert.content.status ?? 'Good');
@@ -263,7 +265,7 @@ export default function ReadTab() {
                 );
               })()}
               <View style={s.cardDivider} />
-              <ScrollView style={{ flexShrink: 1 }} contentContainerStyle={s.modalBody}>
+              <ScrollView style={{ flex: 1 }} contentContainerStyle={s.modalBody}>
                 {!!selectedExpert.content.oneLiner && (
                   <View style={s.modalSection}>
                     <SectionLabel text="Today's signal" />
@@ -301,7 +303,7 @@ export default function ReadTab() {
                 </Pressable>
               </View>
             </View>
-          </Pressable>
+          </View>
         </Modal>
       )}
 
@@ -472,7 +474,7 @@ const s = StyleSheet.create({
   cardAction:  { fontFamily: F.ui, fontSize: 13, color: C.text, lineHeight: 19 },
 
   // Expert detail modal
-  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'center', alignItems: 'center', padding: 24 },
+  modalRoot:     { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'center', alignItems: 'center', padding: 24 },
   modalSheet:    { width: '100%', maxWidth: 360, backgroundColor: C.bg, borderWidth: 1, borderColor: C.accentDim, overflow: 'hidden' },
   modalHeader:   { alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 28, overflow: 'hidden', position: 'relative' },
   modalName:     { fontFamily: F.display, fontSize: 20, color: C.text },
