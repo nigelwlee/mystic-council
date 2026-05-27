@@ -10,11 +10,12 @@ export async function fetchTapestry(
 ): Promise<Record<string, EngagementLevel>> {
   const [{ data: entries }, { data: chats }] = await Promise.all([
     supabase
-      .from('tapestry_entries')
-      .select('entry_date, body')
+      .from('readings')
+      .select('reading_date')
       .eq('user_id', userId)
-      .gte('entry_date', fromDate)
-      .lte('entry_date', toDate),
+      .eq('kind', 'daily')
+      .gte('reading_date', fromDate)
+      .lte('reading_date', toDate),
     supabase
       .from('chat_messages')
       .select('chat_date')
@@ -27,7 +28,7 @@ export async function fetchTapestry(
   const result: Record<string, EngagementLevel> = {};
 
   for (const row of entries ?? []) {
-    result[row.entry_date] = 1;
+    result[row.reading_date] = 1;
   }
 
   // Bump to 2 for any date that also has a chat message
