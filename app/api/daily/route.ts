@@ -163,7 +163,9 @@ export async function POST(req: Request) {
       const signalBlock = signals.length > 0
         ? `\nAspect signals:\n${signals.map((s) => `- ${s.aspect} (${s.strength}): ${s.note}`).join("\n")}`
         : "";
-      return `### ${r.expertName}\n${r.content.summary}${signalBlock}`;
+      const status = r.content.status ?? "Fair";
+      const action = r.content.action ? `\nAction: ${r.content.action}` : "";
+      return `### ${r.expertName} — Status: ${status}\n${r.content.summary}${action}${signalBlock}`;
     })
     .join("\n\n---\n\n");
 
@@ -171,7 +173,7 @@ export async function POST(req: Request) {
   const judgeSystemPrompt = judgePrompt.replace("{expertOutputs}", expertOutputs) + "\n\n" + VOICE_RULES + "\n\n" + FORMAT_RULES;
   const judgeStart = Date.now();
 
-  const judgeUserMessage = `Synthesize a daily reading for ${date} in 2-3 sentences.`;
+  const judgeUserMessage = `Synthesize a daily reading for ${date}. Compose weaving.headline as a short luck verdict (3-8 words) rolling up the council's statuses — it must differ from oneLiner.`;
   const judgeModels = [judgeConfig.model, ...(judgeConfig.fallbackModels ?? [])];
   let oracle: DailyReadingResponse["oracle"];
   // Cap judge to whatever budget remains, capped at 10s; skip entirely if out of budget.
