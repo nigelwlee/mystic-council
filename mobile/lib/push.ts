@@ -26,9 +26,7 @@ export async function registerForPushNotifications(userId: string): Promise<void
   const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId });
   if (!token) return;
 
-  // TODO: run npm run types:generate after migration to remove the `as any` cast
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await (supabase as any).from('push_tokens').upsert(
+  await supabase.from('push_tokens').upsert(
     { user_id: userId, token, platform: Platform.OS, updated_at: new Date().toISOString() },
     { onConflict: 'user_id' }
   );

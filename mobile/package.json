@@ -9,7 +9,7 @@
     "web": "expo start --web",
     "doctor": "npx expo-doctor",
     "typecheck": "tsc --noEmit",
-    "types:generate": "supabase gen types typescript --project-id kcywwmglfgzcqeglmpkx > lib/database.types.ts",
+    "types:generate": "npx supabase gen types typescript --project-id kcywwmglfgzcqeglmpkx > lib/database.types.ts",
     "build:ios": "npx eas-cli build --platform ios --profile production",
     "build:ios:preview": "npx eas-cli build --platform ios --profile preview",
     "submit:ios": "npx eas-cli submit --platform ios --profile production --latest"
