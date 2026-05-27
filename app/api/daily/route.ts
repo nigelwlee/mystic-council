@@ -17,6 +17,22 @@ import { buildChart } from "@/lib/api/build-chart";
 
 export const maxDuration = 60;
 
+const LUCK_HEADLINE: Record<string, string> = {
+  Excellent: "A standout day — push forward",
+  Strong: "Strong tailwinds across the council",
+  Fair: "Mixed currents — pick your moments",
+  Weak: "Hold steady — wait this one out",
+};
+
+function normStr(s: string) { return s.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim(); }
+
+function fixedHeadline(headline: string | undefined | null, oneLiner: string, luck: string | undefined): string {
+  const h = headline?.trim() ?? "";
+  const ol = oneLiner.trim();
+  const dup = !h || normStr(h) === normStr(ol) || normStr(ol).includes(normStr(h)) || normStr(h).includes(normStr(ol));
+  return dup ? (LUCK_HEADLINE[luck ?? "Fair"] ?? LUCK_HEADLINE.Fair) : h;
+}
+
 const openrouter = createOpenAI({
   apiKey: process.env.OPENROUTER_API_KEY,
   baseURL: "https://openrouter.ai/api/v1",
@@ -79,7 +95,22 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (cached?.output) {
-      return Response.json(cached.output as DailyReadingResponse);
+      const out = cached.output as DailyReadingResponse;
+      const luck = out.oracle.commonThread?.luck;
+      const healed = fixedHeadline(out.oracle.weaving?.headline, out.oracle.oneLiner, luck);
+      if (healed !== (out.oracle.weaving?.headline ?? "")) {
+        const patched: DailyReadingResponse = {
+          ...out,
+          oracle: { ...out.oracle, weaving: { ...(out.oracle.weaving ?? { subtitle: "", headline: "", checklist: [] }), headline: healed } },
+        };
+        // Write back so subsequent reads are clean
+        void dbClient.from("readings").upsert(
+          { user_id: user.id, kind: "daily", reading_date: date, input: out.input, output: patched, total_duration_ms: out.totalDurationMs },
+          { onConflict: "user_id,kind,reading_date" }
+        );
+        return Response.json(patched);
+      }
+      return Response.json(out);
     }
   }
 
@@ -197,28 +228,12 @@ export async function POST(req: Request) {
     });
 
     // Guarantee weaving.headline is non-empty and distinct from oneLiner.
-    // Prompt-only guidance isn't deterministic; derive from luck rating as fallback.
     {
-      const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
-      const headline = judgeResult.object.weaving?.headline?.trim() ?? '';
-      const ol = judgeResult.object.oneLiner.trim();
-      const dup = !headline ||
-        norm(headline) === norm(ol) ||
-        norm(ol).includes(norm(headline)) ||
-        norm(headline).includes(norm(ol));
-      if (dup) {
-        const luck = judgeResult.object.commonThread?.luck ?? 'Fair';
-        const luckyHeadline: Record<string, string> = {
-          Excellent: 'A standout day — push forward',
-          Strong: 'Strong tailwinds across the council',
-          Fair: 'Mixed currents — pick your moments',
-          Weak: 'Hold steady — wait this one out',
-        };
-        judgeResult.object.weaving = {
-          ...(judgeResult.object.weaving ?? { subtitle: '', headline: '', checklist: [] }),
-          headline: luckyHeadline[luck] ?? luckyHeadline.Fair,
-        };
-        console.log(JSON.stringify({ event: 'weaving_headline_dedup', luck, originalHeadline: headline }));
+      const luck = judgeResult.object.commonThread?.luck;
+      const healed = fixedHeadline(judgeResult.object.weaving?.headline, judgeResult.object.oneLiner, luck);
+      if (healed !== (judgeResult.object.weaving?.headline?.trim() ?? "")) {
+        judgeResult.object.weaving = { ...(judgeResult.object.weaving ?? { subtitle: "", headline: "", checklist: [] }), headline: healed };
+        console.log(JSON.stringify({ event: "weaving_headline_dedup", luck, healed }));
       }
     }
 
