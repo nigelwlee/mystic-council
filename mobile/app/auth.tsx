@@ -23,14 +23,27 @@ export default function AuthScreen() {
     setLoading(true);
     setError('');
     try {
+      const trimmedEmail = email.trim();
       if (mode === 'signin') {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
+        const { error } = await supabase.auth.signInWithPassword({ email: trimmedEmail, password });
+        if (error) {
+          // Surface unconfirmed accounts straight to the verify screen instead of a raw error.
+          if (error.code === 'email_not_confirmed' || /not.*confirm/i.test(error.message)) {
+            router.push({ pathname: '/verify-email', params: { email: trimmedEmail } });
+            return;
+          }
+          throw error;
+        }
+        // SIGNED_IN fires; _layout.tsx routes.
       } else {
-        const { error } = await supabase.auth.signUp({ email, password });
+        const { data, error } = await supabase.auth.signUp({ email: trimmedEmail, password });
         if (error) throw error;
+        // If confirmation is required, no session is returned — go collect the code.
+        if (!data.session) {
+          router.push({ pathname: '/verify-email', params: { email: trimmedEmail } });
+        }
+        // Otherwise SIGNED_IN fires; _layout.tsx routes.
       }
-      // Routing is handled by onAuthStateChange in _layout.tsx
     } catch (e: any) {
       setError(e.message ?? 'Something went wrong');
     } finally {
