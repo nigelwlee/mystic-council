@@ -9,7 +9,7 @@ export const chineseAstrologer: ExpertConfig = {
   color: "#dc2626",
   textColor: "text-red-400",
   knowledgePath: "chinese-astrology",
-  model: "google/gemini-2.0-flash-001",
-  fallbackModels: ["moonshotai/kimi-k2", "deepseek/deepseek-chat"],
+  model: "google/gemini-2.5-flash",
+  fallbackModels: ["openai/gpt-4o-mini", "deepseek/deepseek-chat"],
   tools: chineseAstrologyTools,
 };

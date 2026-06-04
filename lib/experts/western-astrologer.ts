@@ -9,7 +9,7 @@ export const westernAstrologer: ExpertConfig = {
   color: "#6366f1",
   textColor: "text-indigo-400",
   knowledgePath: "western-astrology",
-  model: "google/gemini-2.0-flash-001",
-  fallbackModels: ["moonshotai/kimi-k2", "deepseek/deepseek-chat"],
+  model: "google/gemini-2.5-flash",
+  fallbackModels: ["openai/gpt-4o-mini", "deepseek/deepseek-chat"],
   tools: westernAstrologyTools,
 };
