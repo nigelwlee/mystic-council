@@ -12,6 +12,7 @@ import { FORMAT_RULES } from "@/lib/format";
 import { makeSeededRng, makeDrawCardsTool } from "@/lib/tools/tarot";
 import { getPostHogClient } from "@/lib/posthog-server";
 import { getUserFromRequest } from "@/lib/api/auth";
+import { screenForCrisis, CRISIS_RESPONSE_TEXT } from "@/lib/safety";
 
 // Daily tarot: seeded by date+question so the daily reading is stable.
 // Council (chat): seeded by date+question+userId so each user gets unique cards
@@ -46,6 +47,23 @@ export async function POST(req: Request) {
     return Response.json({ error: parsed.error.flatten() }, { status: 400 });
   }
   const { birthData, date, question, chart, dailyReading, userId } = parsed.data;
+
+  if (screenForCrisis(question)) {
+    console.log(JSON.stringify({ event: "crisis_screen_triggered", route: "council/stream", user_id: authResult?.user.id ?? null }));
+    const crisisOracle = { summary: CRISIS_RESPONSE_TEXT, oneLiner: "Please reach out for help.", chimers: [], aspectCallouts: [], chimerCandidates: [] };
+    const enc = new TextEncoder();
+    const crisisStream = new ReadableStream({
+      start(ctrl) {
+        const emit = (d: unknown) => ctrl.enqueue(enc.encode(`data: ${JSON.stringify(d)}\n\n`));
+        emit({ type: "run-start", endpoint: "council", input: parsed.data });
+        emit({ type: "oracle-complete", oracle: crisisOracle });
+        emit({ type: "run-complete", id: crypto.randomUUID(), generatedAt: new Date().toISOString(), input: parsed.data, experts: [], oracle: crisisOracle, totalDurationMs: 0 });
+        ctrl.close();
+      },
+    });
+    return new Response(crisisStream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" } });
+  }
+
   const userMessage = `${question}\n\nToday's date: ${date}`;
 
   // Pre-draw tarot cards: seeded per (userId, date, question) — concurrency-safe,

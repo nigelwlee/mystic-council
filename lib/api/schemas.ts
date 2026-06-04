@@ -3,12 +3,12 @@ import { z } from "zod";
 // ─── Inputs ──────────────────────────────────────────────────────────────────
 
 export const BirthDataSchema = z.object({
-  name: z.string().nullish(),
+  name: z.string().max(50).nullish(),
   date: z.string().optional(),
   time: z.string().nullish(),
   latitude: z.number().nullish(),
   longitude: z.number().nullish(),
-  location: z.string().nullish(),
+  location: z.string().max(100).nullish(),
 });
 
 // Forward-declared loosely-typed shapes for prerequisite passthrough.
@@ -40,7 +40,7 @@ export const ContextInputSchema = z.object({
 });
 
 export const QuestionInputSchema = ContextInputSchema.extend({
-  question: z.string().min(1, "question is required"),
+  question: z.string().min(1, "question is required").max(500, "Please shorten your question."),
   dailyDigest: z.boolean().optional(),
   dailyReading: DailyReadingPassthroughSchema.optional(),
 });

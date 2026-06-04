@@ -13,6 +13,7 @@ import {
 import { router } from 'expo-router';
 import { supabase } from '../lib/supabase';
 import { triggerProfileGeneration } from '../lib/chart-api';
+import { containsBadWord } from '../lib/safety';
 
 export default function OnboardingScreen() {
   const [name, setName] = useState('');
@@ -43,6 +44,7 @@ export default function OnboardingScreen() {
 
   function validate() {
     if (!name.trim()) return 'Name is required.';
+    if (containsBadWord(name)) return 'Please use your real name.';
     if (year.length !== 4 || month.length < 1 || day.length < 1) return 'Enter a complete birth date.';
     const d = new Date(buildDateStr());
     if (isNaN(d.getTime()) || d >= new Date()) return 'Enter a valid birth date in the past.';
@@ -102,6 +104,7 @@ export default function OnboardingScreen() {
           value={name}
           onChangeText={setName}
           autoCapitalize="words"
+          maxLength={50}
         />
 
         <Text style={styles.label}>Birth Date</Text>
@@ -209,6 +212,7 @@ export default function OnboardingScreen() {
           value={birthplace}
           onChangeText={setBirthplace}
           autoCapitalize="words"
+          maxLength={100}
         />
 
         <Pressable style={styles.button} onPress={handleSave} disabled={loading}>

@@ -380,6 +380,7 @@ export default function ChatTab() {
             placeholderTextColor="rgba(245,240,232,0.2)"
             multiline
             numberOfLines={4}
+            maxLength={500}
             editable={!pending && !!birthData}
             blurOnSubmit={false}
           />

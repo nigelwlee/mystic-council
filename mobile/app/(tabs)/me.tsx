@@ -6,6 +6,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { supabase } from '../../lib/supabase';
+import { containsBadWord } from '../../lib/safety';
 import {
   fetchChart, fetchProfile,
   westernHeadline, vedicHeadline, chineseHeadline, numerologyHeadline,
@@ -136,6 +137,7 @@ export default function MeTab() {
 
   async function handleSave() {
     if (!isDirty || saving) return;
+    if (containsBadWord(draftName)) { setHint('Please use your real name.'); return; }
     setSaving(true);
     setHint('');
     const hints: string[] = [];
@@ -302,6 +304,7 @@ export default function MeTab() {
               autoCapitalize="words"
               placeholder="Full name"
               placeholderTextColor={C.dimmer}
+              maxLength={50}
             />
           </ProfileRow>
           <ProfileRow label="Born">
@@ -332,6 +335,7 @@ export default function MeTab() {
               autoCapitalize="words"
               placeholder="City, Country"
               placeholderTextColor={C.dimmer}
+              maxLength={100}
             />
           </ProfileRow>
           <ProfileRow label="Lat / Lng" isLast>

@@ -13,6 +13,7 @@ import type { CouncilReading, Digest, ExpertReading } from "@/lib/api/schemas";
 import { IS_MOCK_MODE, mockDelay } from "@/lib/mock";
 import { bumpStreak } from "@/lib/api/streak";
 import { getUserFromRequest } from "@/lib/api/auth";
+import { screenForCrisis, CRISIS_RESPONSE_TEXT } from "@/lib/safety";
 
 export const maxDuration = 90;
 
@@ -45,6 +46,19 @@ export async function POST(req: Request) {
   // Prefer Bearer token (mobile); fall back to cookie session (web)
   const authResult = await getUserFromRequest(req);
   const user: { id: string } | null = authResult?.user ?? null;
+
+  if (screenForCrisis(question)) {
+    console.log(JSON.stringify({ event: "crisis_screen_triggered", route: "council", user_id: user?.id ?? null }));
+    const safeReading: CouncilReading = {
+      id: crypto.randomUUID(),
+      generatedAt: new Date().toISOString(),
+      input: { birthData, date, question },
+      experts: [],
+      oracle: { summary: CRISIS_RESPONSE_TEXT, oneLiner: "Please reach out for help.", aspectCallouts: [], chimers: [], chimerCandidates: [] },
+      totalDurationMs: 0,
+    };
+    return Response.json(safeReading);
+  }
 
   if (IS_MOCK_MODE) {
     await mockDelay(800, 1200);
