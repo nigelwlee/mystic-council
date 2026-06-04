@@ -207,6 +207,7 @@ export async function POST(req: Request) {
   const judgeUserMessage = `Synthesize a daily reading for ${date}. Compose weaving.headline as a short luck verdict (3-8 words) rolling up the council's statuses — it must differ from oneLiner.`;
   const judgeModels = [judgeConfig.model, ...(judgeConfig.fallbackModels ?? [])];
   let oracle: DailyReadingResponse["oracle"];
+  let oracleFailed = false;
   // Cap judge to whatever budget remains, capped at 10s; skip entirely if out of budget.
   const judgeCap = Math.min(10_000, deadline - Date.now() - 4_000);
   try {
@@ -260,6 +261,7 @@ export async function POST(req: Request) {
     };
   } catch (err) {
     console.log(JSON.stringify({ event: "oracle_fail", endpoint: "daily", err: err instanceof Error ? err.message : String(err) }));
+    oracleFailed = true;
     oracle = {
       summary: "The oracle was unable to synthesize today's reading.",
       oneLiner: "Py fell silent — please try again.",
@@ -282,8 +284,10 @@ export async function POST(req: Request) {
     totalDurationMs: Date.now() - start,
   };
 
-  // Persist to Supabase if user is authenticated
-  if (user) {
+  // Persist to Supabase if user is authenticated and oracle succeeded.
+  // Skip on oracle failure so the bad stub doesn't poison the cache — next
+  // request will re-attempt the judge rather than serving a stale error row.
+  if (user && !oracleFailed) {
     const { error: dbError } = await dbClient
       .from("readings")
       .upsert(
