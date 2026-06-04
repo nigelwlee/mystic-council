@@ -26,6 +26,14 @@ const LUCK_HEADLINE: Record<string, string> = {
 
 function normStr(s: string) { return s.toLowerCase().replace(/[^a-z0-9 ]/g, "").trim(); }
 
+function isOracleStub(out: DailyReadingResponse): boolean {
+  const o = out.oracle;
+  return (
+    o.summary === "The oracle was unable to synthesize today's reading." ||
+    (!o.commonThread && !o.weaving)
+  );
+}
+
 function fixedHeadline(headline: string | undefined | null, oneLiner: string, luck: string | undefined): string {
   const h = headline?.trim() ?? "";
   const ol = oneLiner.trim();
@@ -96,21 +104,33 @@ export async function POST(req: Request) {
 
     if (cached?.output) {
       const out = cached.output as DailyReadingResponse;
-      const luck = out.oracle.commonThread?.luck;
-      const healed = fixedHeadline(out.oracle.weaving?.headline, out.oracle.oneLiner, luck);
-      if (healed !== (out.oracle.weaving?.headline ?? "")) {
-        const patched: DailyReadingResponse = {
-          ...out,
-          oracle: { ...out.oracle, weaving: { ...(out.oracle.weaving ?? { subtitle: "", headline: "", checklist: [] }), headline: healed } },
-        };
-        // Write back so subsequent reads are clean
-        void dbClient.from("readings").upsert(
-          { user_id: user.id, kind: "daily", reading_date: date, input: out.input, output: patched, total_duration_ms: out.totalDurationMs },
-          { onConflict: "user_id,kind,reading_date" }
-        );
-        return Response.json(patched);
+      if (isOracleStub(out)) {
+        // Legacy poisoned row — delete it and fall through to regeneration.
+        void dbClient
+          .from("readings")
+          .delete()
+          .eq("user_id", user.id)
+          .eq("kind", "daily")
+          .eq("reading_date", date);
+        console.log(JSON.stringify({ event: "oracle_stub_evicted", user_id: user.id, date }));
+        // fall through
+      } else {
+        const luck = out.oracle.commonThread?.luck;
+        const healed = fixedHeadline(out.oracle.weaving?.headline, out.oracle.oneLiner, luck);
+        if (healed !== (out.oracle.weaving?.headline ?? "")) {
+          const patched: DailyReadingResponse = {
+            ...out,
+            oracle: { ...out.oracle, weaving: { ...(out.oracle.weaving ?? { subtitle: "", headline: "", checklist: [] }), headline: healed } },
+          };
+          // Write back so subsequent reads are clean
+          void dbClient.from("readings").upsert(
+            { user_id: user.id, kind: "daily", reading_date: date, input: out.input, output: patched, total_duration_ms: out.totalDurationMs },
+            { onConflict: "user_id,kind,reading_date" }
+          );
+          return Response.json(patched);
+        }
+        return Response.json(out);
       }
-      return Response.json(out);
     }
   }
 
