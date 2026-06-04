@@ -82,5 +82,5 @@ export const mockDailyExperts = [
 export const mockDailyOracle: ProtoOracle = {
   oneLiner: "You are in a builder's season — do the work, prepare the cup, and the opening will find you ready.",
   summary:
-    "The council speaks with unusual coherence. Every tradition — the Eight of Pentacles, Saturn in the 10th, the Water Dog building steadily, Life Path 7 — describes the same person doing careful, patient work that compounds over time. An opening is coming: the Ace of Cups, Jupiter Mahadasha, the 5 year making way for the 6 — and it will require you to be both skilled enough to receive it and open enough not to deflect it.",
+    "The assembly speaks with unusual coherence. Every tradition — the Eight of Pentacles, Saturn in the 10th, the Water Dog building steadily, Life Path 7 — describes the same person doing careful, patient work that compounds over time. An opening is coming: the Ace of Cups, Jupiter Mahadasha, the 5 year making way for the 6 — and it will require you to be both skilled enough to receive it and open enough not to deflect it.",
 };

@@ -14,9 +14,9 @@ const USER_BG = "rgba(245,240,232,0.05)";
 
 const MOCK_RESPONSES = [
   "The threads of today weave an interesting pattern. The Oracle sees tension giving way to clarity — lean into stillness for now, and the answer you seek will surface on its own.",
-  "The council convenes. Your day carries the signature of a turning point — not dramatic, but decisive. Small choices made with intention carry unusual weight right now.",
+  "The assembly convenes. Your day carries the signature of a turning point — not dramatic, but decisive. Small choices made with intention carry unusual weight right now.",
   "There is a quiet momentum building beneath the surface of your day. The stars counsel patience; what you're reaching for is closer than it appears. Trust the process.",
-  "The council reads a day of contrasts — what feels like friction may be refinement. Stay close to what genuinely nourishes you and let the rest resolve itself.",
+  "The assembly reads a day of contrasts — what feels like friction may be refinement. Stay close to what genuinely nourishes you and let the rest resolve itself.",
 ];
 
 function today(): string {
@@ -165,7 +165,7 @@ function EmptyState() {
           margin: 0,
         }}
       >
-        Share anything — the council is listening.
+        Share anything — the assembly is listening.
       </p>
     </div>
   );

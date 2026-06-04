@@ -209,7 +209,7 @@ export default function ReadTab() {
   const charms = reading?.oracle.commonThread?.charms ?? [];
   const watchouts = reading?.oracle.commonThread?.watchouts ?? [];
   const checklist: ChecklistItem[] = reading?.oracle.weaving?.checklist ?? [];
-  const weavingSubtitle = reading?.oracle.weaving?.subtitle ?? 'Most of the council agrees';
+  const weavingSubtitle = reading?.oracle.weaving?.subtitle ?? 'Most of the assembly agrees';
   const weavingHeadline = reading?.oracle.weaving?.headline ?? '';
   const quote = reading?.oracle.quote ?? '';
 
@@ -226,7 +226,7 @@ export default function ReadTab() {
       {loading && !reading && (
         <View style={s.center}>
           <ActivityIndicator color={C.accent} />
-          <Text style={s.loadingText}>Consulting the council…</Text>
+          <Text style={s.loadingText}>Consulting the assembly…</Text>
         </View>
       )}
 

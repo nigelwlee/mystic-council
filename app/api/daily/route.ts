@@ -19,7 +19,7 @@ export const maxDuration = 60;
 
 const LUCK_HEADLINE: Record<string, string> = {
   Excellent: "A standout day — push forward",
-  Strong: "Strong tailwinds across the council",
+  Strong: "Strong tailwinds across the assembly",
   Fair: "Mixed currents — pick your moments",
   Weak: "Hold steady — wait this one out",
 };
@@ -204,7 +204,7 @@ export async function POST(req: Request) {
   const judgeSystemPrompt = judgePrompt.replace("{expertOutputs}", expertOutputs) + "\n\n" + VOICE_RULES + "\n\n" + FORMAT_RULES;
   const judgeStart = Date.now();
 
-  const judgeUserMessage = `Synthesize a daily reading for ${date}. Compose weaving.headline as a short luck verdict (3-8 words) rolling up the council's statuses — it must differ from oneLiner.`;
+  const judgeUserMessage = `Synthesize a daily reading for ${date}. Compose weaving.headline as a short luck verdict (3-8 words) rolling up the assembly's statuses — it must differ from oneLiner.`;
   const judgeModels = [judgeConfig.model, ...(judgeConfig.fallbackModels ?? [])];
   let oracle: DailyReadingResponse["oracle"];
   let oracleFailed = false;

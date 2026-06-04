@@ -62,7 +62,7 @@ export default function AuthScreen() {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <Text style={styles.title}>Mystic Council</Text>
+      <Text style={styles.title}>Starbly</Text>
       <Text style={styles.subtitle}>
         {mode === 'signin' ? 'Sign in to your reading' : 'Create your account'}
       </Text>

@@ -352,7 +352,7 @@ export async function synthesize(
   } catch (err) {
     logRun({ userId: opts.userId, route: opts.route ?? "council", phase: "judge", model: opts.judgeConfig.model, ok: false, error: err instanceof Error ? err.message : String(err), meta: { event: "judge_synthesis_failed", modelsAttempted: judgeModels.length } });
     return {
-      summary: "The council was unable to synthesize a verdict.",
+      summary: "The assembly was unable to synthesize a verdict.",
       oneLiner: "Py fell silent — please try again.",
       aspectCallouts: [],
       chimers: [],

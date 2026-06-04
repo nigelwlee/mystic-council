@@ -289,7 +289,7 @@ export default function ChatTab() {
       } catch (e) {
         setMessages((prev) => [...prev, {
           role: 'assistant',
-          content: e instanceof Error ? e.message : 'The council could not be reached. Please try again.',
+          content: e instanceof Error ? e.message : 'The assembly could not be reached. Please try again.',
           createdAt: new Date().toISOString(),
           isError: true,
         }]);

@@ -157,7 +157,7 @@ export async function POST(req: Request) {
         } catch (err) {
           console.log(JSON.stringify({ event: "oracle_fail", endpoint: "daily/stream", err: err instanceof Error ? err.message : String(err) }));
           oracle = {
-            summary: "The council was unable to synthesize a verdict.",
+            summary: "The assembly was unable to synthesize a verdict.",
             oneLiner: "Py fell silent — please try again.",
             chimers: [],
             durationMs: Date.now() - judgeStart,

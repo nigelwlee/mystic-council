@@ -105,7 +105,7 @@ export default function AuthPage() {
           className="text-3xl mb-2 text-center"
           style={{ fontFamily: "var(--font-cormorant)", color: "#F5F0E8" }}
         >
-          Mystic Council
+          Starbly
         </h1>
         <p className="text-sm text-center mb-8" style={{ color: "rgba(191,168,130,0.7)" }}>
           {subtitle}

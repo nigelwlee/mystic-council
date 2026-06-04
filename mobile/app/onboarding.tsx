@@ -90,7 +90,7 @@ export default function OnboardingScreen() {
     >
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         <Text style={styles.title}>Your Chart</Text>
-        <Text style={styles.subtitle}>Tell the council when and where you arrived</Text>
+        <Text style={styles.subtitle}>Tell the assembly when and where you arrived</Text>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 

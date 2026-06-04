@@ -24,7 +24,7 @@ export async function GET(req: Request) {
   const messages = tokens.map((row: { token: string; user_id: string }) => ({
     to: row.token,
     title: "Your daily reading is ready",
-    body: "The council has gathered. See what today holds.",
+    body: "The assembly has gathered. See what today holds.",
     sound: "default",
   }));
 

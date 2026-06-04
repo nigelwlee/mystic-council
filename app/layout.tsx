@@ -22,8 +22,8 @@ const cormorantGaramond = Cormorant_Garamond({
 });
 
 export const metadata: Metadata = {
-  title: "Mystic Council",
-  description: "Consult the council of mystical traditions",
+  title: "Starbly",
+  description: "Consult the assembly of mystical traditions",
 };
 
 export const viewport: Viewport = {

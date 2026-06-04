@@ -225,7 +225,7 @@ export default function DailyPage() {
               fontWeight: 600,
             }}
           >
-            Ask the council →
+            Ask the assembly →
           </button>
         </div>
       )}

@@ -148,7 +148,7 @@ export default function InputsPage() {
             marginBottom: 12,
           }}
         >
-          Mystic Council
+          Starbly
         </div>
         <h1
           style={{
