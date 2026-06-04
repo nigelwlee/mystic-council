@@ -61,7 +61,7 @@ export default function VerifyEmailScreen() {
     >
       <Text style={styles.title}>Check your email</Text>
       <Text style={styles.subtitle}>
-        We sent a 6-digit code to {email || 'your inbox'}. Enter it below to confirm your account.
+        We sent a code to {email || 'your inbox'}. Enter it below to confirm your account.
       </Text>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -69,13 +69,13 @@ export default function VerifyEmailScreen() {
 
       <TextInput
         style={styles.input}
-        placeholder="6-digit code"
+        placeholder="Confirmation code"
         placeholderTextColor="#6B7280"
         value={code}
         onChangeText={setCode}
         keyboardType="number-pad"
         autoFocus
-        maxLength={6}
+        maxLength={10}
       />
 
       <Pressable style={styles.button} onPress={verify} disabled={loading}>
