@@ -280,7 +280,13 @@ export async function POST(req: Request) {
       userMessage: judgeUserMessage,
     };
   } catch (err) {
-    console.log(JSON.stringify({ event: "oracle_fail", endpoint: "daily", err: err instanceof Error ? err.message : String(err) }));
+    {
+      const errName = err instanceof Error ? err.name : "Unknown";
+      const errMsg = err instanceof Error ? err.message : String(err);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const zodIssues = (err as any)?.issues?.slice?.(0, 3) ?? undefined;
+      console.log(JSON.stringify({ event: "oracle_fail", endpoint: "daily", err: errMsg, errName, judgeDurationMs: Date.now() - judgeStart, judgeCap, zodIssues, triedModels: judgeModels }));
+    }
     oracleFailed = true;
     oracle = {
       summary: "The oracle was unable to synthesize today's reading.",
