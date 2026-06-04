@@ -38,6 +38,12 @@ export default function AuthScreen() {
       } else {
         const { data, error } = await supabase.auth.signUp({ email: trimmedEmail, password });
         if (error) throw error;
+        // Supabase suppresses errors for existing emails to prevent enumeration,
+        // but returns an empty identities array as the tell-tale sign.
+        if (data.user && (data.user.identities?.length ?? 0) === 0) {
+          setError('An account with this email already exists. Try signing in instead.');
+          return;
+        }
         // If confirmation is required, no session is returned — go collect the code.
         if (!data.session) {
           router.push({ pathname: '/verify-email', params: { email: trimmedEmail } });
